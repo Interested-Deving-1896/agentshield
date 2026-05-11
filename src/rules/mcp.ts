@@ -1535,6 +1535,147 @@ const rawMcpRules: ReadonlyArray<Rule> = [
       return findings;
     },
   },
+  /**
+   * Detects MCP servers that invoke `npx -c` / `--call` (or `--call=…`).
+   *
+   * These flags pass the trailing argument to the user's shell, giving an
+   * RCE primitive equivalent to `sh -c`. This is the Flowise bypass pattern
+   * documented by Ox Security ("Mother of All AI Supply Chains", Family 2).
+   *
+   * The rule only scans flags that appear **before** the first positional
+   * (package name) in the args array — anything after the package belongs
+   * to the downstream command and must not be matched.
+   */
+  {
+    id: "mcp-npx-shell-exec",
+    name: "MCP npx shell-exec flag",
+    description:
+      "Checks for MCP servers using `npx -c` / `--call` (including `--call=…`) — these pass the argument to the user's shell, giving RCE equivalent to `sh -c`.",
+    severity: "high",
+    category: "mcp",
+    check(file: ConfigFile): ReadonlyArray<Finding> {
+      if (file.type !== "mcp-json" && file.type !== "settings-json") return [];
+
+      const findings: Finding[] = [];
+
+      /**
+       * Returns true if `cmd` resolves to the npx binary.
+       *
+       * Matches bare `npx` as well as absolute paths (e.g. `/usr/local/bin/npx`)
+       * and Windows variants (`npx.cmd`, `npx.exe`). Splits on both `/` and `\`
+       * so the check is cross-platform.
+       */
+      function isNpxCommand(cmd: string | undefined): boolean {
+        if (!cmd) return false;
+        const basename = cmd.split(/[\\/]/).pop() ?? "";
+        return basename === "npx" || basename === "npx.cmd" || basename === "npx.exe";
+      }
+
+      /**
+       * npx options that consume the following argv token as their value.
+       *
+       * When we encounter one of these we must skip that value so it isn't
+       * mistaken for the package positional (which terminates flag scanning).
+       * Keep this list aligned with the options documented by `npx --help`
+       * that take a separate value token.
+       */
+      const npxValueTakingOptions: ReadonlySet<string> = new Set([
+        "-p",
+        "--package",
+        "-w",
+        "--workspace",
+        "--registry",
+        "--loglevel",
+        "--userconfig",
+        "--globalconfig",
+        "--prefix",
+      ]);
+
+      /**
+       * Scans npx args for a shell-execution flag before the package positional.
+       *
+       * Returns the matched flag (`-c`, `--call`, or `--call` for the `--call=…`
+       * attached form) or `undefined` if no such flag appears in the pre-package
+       * region of the args array.
+       *
+       * Handling rules:
+       * - `--call=<cmd>` — attached long-option form, matches immediately.
+       * - `--<name>=<value>` — any other attached long option is self-contained;
+       *   advance one token.
+       * - Value-taking options from `npxValueTakingOptions` consume the next
+       *   token as their value; advance two tokens.
+       * - Any other `-`-prefixed token (including combined short flags like
+       *   `-yp`) is a boolean flag; advance one token.
+       * - First non-flag token = package name; stop scanning.
+       */
+      function findShellExecFlag(args: ReadonlyArray<unknown>): string | undefined {
+        let i = 0;
+        while (i < args.length) {
+          const raw = args[i];
+          if (typeof raw !== "string") return undefined;
+          if (raw === "-c" || raw === "--call") return raw;
+          if (raw.startsWith("--call=")) return "--call";
+          // Attached long-option values (--package=foo) are self-contained.
+          if (raw.startsWith("--") && raw.includes("=")) {
+            i++;
+            continue;
+          }
+          // Known value-taking options consume the next token.
+          if (npxValueTakingOptions.has(raw)) {
+            i += 2;
+            continue;
+          }
+          // Any other flag (including combined short flags like -yp) is kept
+          // but doesn't consume the next token.
+          if (raw.startsWith("-")) {
+            i++;
+            continue;
+          }
+          // First positional = package name; anything past this belongs to
+          // the downstream command and must not be scanned.
+          return undefined;
+        }
+        return undefined;
+      }
+
+      try {
+        const config = JSON.parse(file.content);
+        const servers = config.mcpServers ?? {};
+
+        for (const [name, server] of Object.entries(servers)) {
+          const serverConfig = server as Record<string, unknown>;
+          const command = serverConfig.command as string | undefined;
+          const args = (serverConfig.args ?? []) as unknown;
+
+          if (!isNpxCommand(command) || !Array.isArray(args)) continue;
+
+          const matchedFlag = findShellExecFlag(args);
+          if (!matchedFlag) continue;
+
+          findings.push({
+            id: `mcp-npx-shell-exec-${name}`,
+            severity: "high",
+            category: "mcp",
+            title: `MCP server "${name}" uses npx ${matchedFlag} (shell execution)`,
+            description: `The MCP server "${name}" invokes \`npx ${matchedFlag}\` which passes the next argument to the user's shell — identical RCE primitive to \`sh -c\`. This is the Flowise bypass pattern (Ox Security "Mother of All AI Supply Chains", Family 2).`,
+            file: file.path,
+            evidence: `command: ${command}, args: ${JSON.stringify(args)}`,
+            fix: {
+              description:
+                "Remove `-c` / `--call`. Pin to a specific package version with `npx <pkg>@<version>` instead; if shell execution is required, declare the target binary explicitly rather than piggy-backing on npx.",
+              before: `"command": "${command}", "args": ${JSON.stringify(args)}`,
+              after: `"command": "npx", "args": ["<package>@<version>"]`,
+              auto: false,
+            },
+          });
+        }
+      } catch {
+        // Not valid JSON
+      }
+
+      return findings;
+    },
+  },
 ];
 
 export const mcpRules: ReadonlyArray<Rule> = rawMcpRules.map((rule) => ({

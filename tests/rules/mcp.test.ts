@@ -1322,4 +1322,119 @@ describe("mcpRules", () => {
       expect(findings.some((f) => f.id.includes("no-timeout"))).toBe(false);
     });
   });
+
+  describe("npx shell-exec (mcp-npx-shell-exec)", () => {
+    it("flags npx -c as high", () => {
+      const file = makeMcpConfig({
+        pwn: { command: "npx", args: ["-c", "touch /tmp/pwn"] },
+      });
+      const findings = runAllMcpRules(file);
+      const finding = findings.find((f) => f.id === "mcp-npx-shell-exec-pwn");
+      expect(finding?.severity).toBe("high");
+      expect(finding?.title).toContain("-c");
+    });
+
+    it("flags npx --call", () => {
+      const file = makeMcpConfig({
+        pwn: { command: "npx", args: ["--call", "node -e 'require(`x`)()'"] },
+      });
+      const findings = runAllMcpRules(file);
+      expect(findings.some((f) => f.id === "mcp-npx-shell-exec-pwn")).toBe(true);
+    });
+
+    it("flags npx --call= attached long-option form", () => {
+      const file = makeMcpConfig({
+        pwn: { command: "npx", args: ["--call=touch /tmp/pwn"] },
+      });
+      const findings = runAllMcpRules(file);
+      expect(findings.some((f) => f.id === "mcp-npx-shell-exec-pwn")).toBe(true);
+    });
+
+    it("does not flag -e / --eval (these are Node flags, not npx flags)", () => {
+      const file1 = makeMcpConfig({ a: { command: "npx", args: ["-e", "process.exit(0)"] } });
+      const file2 = makeMcpConfig({ b: { command: "npx", args: ["--eval", "1+1"] } });
+      expect(runAllMcpRules(file1).some((f) => f.id.startsWith("mcp-npx-shell-exec"))).toBe(false);
+      expect(runAllMcpRules(file2).some((f) => f.id.startsWith("mcp-npx-shell-exec"))).toBe(false);
+    });
+
+    it("flags npx invoked by absolute path", () => {
+      const file = makeMcpConfig({
+        pwn: { command: "/usr/local/bin/npx", args: ["-c", "touch /tmp/pwn"] },
+      });
+      const findings = runAllMcpRules(file);
+      expect(findings.some((f) => f.id === "mcp-npx-shell-exec-pwn")).toBe(true);
+    });
+
+    it("does not flag -c that belongs to a downstream package (after positional)", () => {
+      const file = makeMcpConfig({
+        benign: { command: "npx", args: ["mytool@1.0.0", "-c", "config.yaml"] },
+      });
+      const findings = runAllMcpRules(file);
+      expect(findings.some((f) => f.id.startsWith("mcp-npx-shell-exec"))).toBe(false);
+    });
+
+    it("still flags when combined with -y", () => {
+      const file = makeMcpConfig({
+        pwn: { command: "npx", args: ["-y", "-c", "touch /tmp/pwn"] },
+      });
+      const findings = runAllMcpRules(file);
+      expect(findings.some((f) => f.id === "mcp-npx-shell-exec-pwn")).toBe(true);
+    });
+
+    it("does not flag pinned npx package invocations", () => {
+      const file = makeMcpConfig({
+        good: { command: "npx", args: ["chrome-devtools-mcp@0.21.0"] },
+      });
+      const findings = runAllMcpRules(file);
+      expect(findings.some((f) => f.id.startsWith("mcp-npx-shell-exec"))).toBe(false);
+    });
+
+    it("does not flag non-npx commands that happen to include -c", () => {
+      const file = makeMcpConfig({
+        shelly: { command: "bash", args: ["-c", "echo hi"] },
+      });
+      const findings = runAllMcpRules(file);
+      expect(findings.some((f) => f.id.startsWith("mcp-npx-shell-exec"))).toBe(false);
+    });
+
+    it("also applies to settings-json mcpServers", () => {
+      const file = makeSettingsConfig({
+        mcpServers: { pwn: { command: "npx", args: ["-c", "echo pwn"] } },
+      });
+      const findings = runAllMcpRules(file);
+      expect(findings.some((f) => f.id === "mcp-npx-shell-exec-pwn")).toBe(true);
+    });
+
+    it("flags -c that follows a value-taking option like --package", () => {
+      const file = makeMcpConfig({
+        pwn: { command: "npx", args: ["--package", "some-pkg", "-c", "echo pwn"] },
+      });
+      const findings = runAllMcpRules(file);
+      expect(findings.some((f) => f.id === "mcp-npx-shell-exec-pwn")).toBe(true);
+    });
+
+    it("flags --call after --package=attached=value", () => {
+      const file = makeMcpConfig({
+        pwn: { command: "npx", args: ["--package=some-pkg", "--call", "echo pwn"] },
+      });
+      const findings = runAllMcpRules(file);
+      expect(findings.some((f) => f.id === "mcp-npx-shell-exec-pwn")).toBe(true);
+    });
+
+    it("flags -c after the boolean --workspaces flag (regression: must not consume next token)", () => {
+      const file = makeMcpConfig({
+        pwn: { command: "npx", args: ["--workspaces", "-c", "touch /tmp/pwn"] },
+      });
+      const findings = runAllMcpRules(file);
+      expect(findings.some((f) => f.id === "mcp-npx-shell-exec-pwn")).toBe(true);
+    });
+
+    it("does not flag -c that appears inside the downstream package arguments", () => {
+      const file = makeMcpConfig({
+        good: { command: "npx", args: ["-y", "some-mcp", "-c", "downstream-arg"] },
+      });
+      const findings = runAllMcpRules(file);
+      expect(findings.some((f) => f.id.startsWith("mcp-npx-shell-exec"))).toBe(false);
+    });
+  });
 });
