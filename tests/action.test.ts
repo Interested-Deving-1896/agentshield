@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
@@ -32,6 +33,15 @@ function isAtOrAboveSeverity(severity: string, minSeverity: string): boolean {
 }
 
 describe("action helpers (logic verification)", () => {
+  it("documents organization policy inputs and outputs in action.yml", () => {
+    const actionYaml = readFileSync(resolve(process.cwd(), "action.yml"), "utf-8");
+
+    expect(actionYaml).toContain("policy:");
+    expect(actionYaml).toContain("fail-on-policy:");
+    expect(actionYaml).toContain("policy-status:");
+    expect(actionYaml).toContain("policy-violations:");
+  });
+
   describe("escapeAnnotation", () => {
     it("escapes percent signs", () => {
       expect(escapeAnnotation("100%")).toBe("100%25");

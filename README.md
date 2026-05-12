@@ -469,10 +469,12 @@ Detailed request/response and schema notes live in [`API.md`](./API.md).
 | `fail-on-findings` | `true` | Fail the action if findings meet severity threshold |
 | `format` | `terminal` | Output format: terminal, json, markdown, sarif |
 | `sarif-output` | `agentshield-results.sarif` | SARIF output path when `format` is `sarif` |
+| `policy` | `""` | Optional organization policy JSON path |
+| `fail-on-policy` | `true` | Fail the action if the organization policy is non-compliant |
 
-**Outputs:** `score` (0–100), `grade` (A–F), `total-findings`, `critical-count`, `sarif-path`
+**Outputs:** `score` (0–100), `grade` (A–F), `total-findings`, `critical-count`, `sarif-path`, `policy-status`, `policy-violations`
 
-The action writes a markdown job summary and emits GitHub annotations inline on affected files. When `format: sarif` is set, it also writes a SARIF 2.1.0 report that can be uploaded to GitHub code scanning with `github/codeql-action/upload-sarif`.
+The action writes a markdown job summary and emits GitHub annotations inline on affected files. When `format: sarif` is set, it also writes a SARIF 2.1.0 report that can be uploaded to GitHub code scanning with `github/codeql-action/upload-sarif`. When `policy` is set, the action appends the organization policy result to the job summary, emits policy violation annotations, and fails by default unless `fail-on-policy: "false"` is set.
 
 ## CLI Reference
 
