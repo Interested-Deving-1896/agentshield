@@ -11213,6 +11213,148 @@ var init_types = __esm({
   }
 });
 
+// src/policy/presets.ts
+function listPolicyPacks() {
+  return PACK_SUMMARIES;
+}
+function generatePolicyPack(pack, options = {}) {
+  const policy = buildPolicyPack(pack);
+  return {
+    ...policy,
+    name: options.name ?? policy.name,
+    owners: [...options.owners ?? policy.owners ?? []]
+  };
+}
+function buildPolicyPack(pack) {
+  switch (pack) {
+    case "oss":
+      return {
+        ...basePolicy(pack, "AgentShield OSS Policy"),
+        description: "Public-repository baseline for obvious destructive tools and risky shell MCPs.",
+        min_score: 70,
+        max_severity: "high"
+      };
+    case "team":
+      return {
+        ...basePolicy(pack, "AgentShield Team Policy"),
+        description: "Shared team baseline with runtime monitoring and risky MCP restrictions.",
+        min_score: 75,
+        max_severity: "high",
+        required_hooks: [RUNTIME_HOOK]
+      };
+    case "enterprise":
+      return {
+        ...basePolicy(pack, "AgentShield Enterprise Policy"),
+        description: "Managed organization baseline with runtime hooks and strict score gates.",
+        min_score: 85,
+        max_severity: "high",
+        required_hooks: [RUNTIME_HOOK],
+        banned_tools: ["Bash(*)"]
+      };
+    case "regulated":
+      return {
+        ...basePolicy(pack, "AgentShield Regulated Policy"),
+        description: "Compliance baseline for sensitive repositories and regulated environments.",
+        min_score: 90,
+        max_severity: "medium",
+        required_hooks: [RUNTIME_HOOK, POST_TOOL_HOOK],
+        banned_mcp_servers: [...RISKY_MCP_SERVERS, "filesystem*", "browser*"],
+        banned_tools: ["Bash(*)", "WebFetch(*)"]
+      };
+    case "high-risk-hooks-mcp":
+      return {
+        ...basePolicy(pack, "AgentShield High-risk Hooks/MCP Policy"),
+        description: "Focused gate for repositories shipping hook code, MCP configs, or plugin manifests.",
+        min_score: 80,
+        max_severity: "high",
+        required_hooks: [RUNTIME_HOOK, POST_TOOL_HOOK],
+        banned_mcp_servers: [...RISKY_MCP_SERVERS, "filesystem*"],
+        banned_tools: ["Bash(*)"]
+      };
+    case "ci-enforcement":
+      return {
+        ...basePolicy(pack, "AgentShield CI Enforcement Policy"),
+        description: "Branch-protection baseline for collecting policy status in CI.",
+        min_score: 80,
+        max_severity: "high",
+        required_hooks: [RUNTIME_HOOK],
+        banned_tools: ["Bash(*)"]
+      };
+  }
+}
+function basePolicy(policyPack, name) {
+  return {
+    version: 1,
+    name,
+    policy_pack: policyPack,
+    owners: [],
+    exceptions: [],
+    required_deny_list: [...REQUIRED_DESTRUCTIVE_DENY_LIST],
+    banned_mcp_servers: [...RISKY_MCP_SERVERS],
+    min_score: 75,
+    max_severity: "high",
+    required_hooks: [],
+    banned_tools: []
+  };
+}
+var REQUIRED_DESTRUCTIVE_DENY_LIST, RISKY_MCP_SERVERS, RUNTIME_HOOK, POST_TOOL_HOOK, PACK_SUMMARIES;
+var init_presets = __esm({
+  "src/policy/presets.ts"() {
+    "use strict";
+    REQUIRED_DESTRUCTIVE_DENY_LIST = [
+      "Bash(rm",
+      "Bash(curl",
+      "Bash(wget"
+    ];
+    RISKY_MCP_SERVERS = [
+      "shell*",
+      "terminal*"
+    ];
+    RUNTIME_HOOK = {
+      event: "PreToolUse",
+      pattern: "agentshield",
+      description: "AgentShield runtime monitor must be installed"
+    };
+    POST_TOOL_HOOK = {
+      event: "PostToolUse",
+      pattern: "agentshield",
+      description: "AgentShield post-tool evidence hook must be installed"
+    };
+    PACK_SUMMARIES = [
+      {
+        id: "oss",
+        label: "OSS",
+        description: "Baseline policy for public repositories with permissive contribution paths."
+      },
+      {
+        id: "team",
+        label: "Team",
+        description: "Default team policy for shared private repositories and active development."
+      },
+      {
+        id: "enterprise",
+        label: "Enterprise",
+        description: "Stricter organization policy for managed production engineering groups."
+      },
+      {
+        id: "regulated",
+        label: "Regulated",
+        description: "High-assurance policy for compliance, audit, and sensitive-data environments."
+      },
+      {
+        id: "high-risk-hooks-mcp",
+        label: "High-risk hooks/MCP",
+        description: "Focused policy for repositories with privileged hooks or MCP integrations."
+      },
+      {
+        id: "ci-enforcement",
+        label: "CI enforcement",
+        description: "Branch-protection policy tuned for GitHub Actions enforcement gates."
+      }
+    ];
+  }
+});
+
 // src/policy/evaluate.ts
 import { readFileSync as readFileSync6, existsSync as existsSync8 } from "fs";
 function loadPolicy2(policyPath) {
@@ -11508,13 +11650,13 @@ function renderPolicyEvaluation(evaluation) {
   lines.push("");
   return lines.join("\n");
 }
-function generateExamplePolicy() {
+function generateExamplePolicy(pack = "enterprise", options = {}) {
+  const policy = generatePolicyPack(pack, {
+    name: options.name ?? "Acme Corp Security Policy",
+    owners: options.owners ?? ["security-platform@acme.example"]
+  });
   const example = {
-    version: 1,
-    name: "Acme Corp Security Policy",
-    description: "Organization-wide Claude Code security requirements",
-    policy_pack: "enterprise",
-    owners: ["security-platform@acme.example"],
+    ...policy,
     exceptions: [
       {
         id: "AS-EX-001",
@@ -11525,19 +11667,7 @@ function generateExamplePolicy() {
         scope: "agentshield",
         ticket: "SEC-1234"
       }
-    ],
-    required_deny_list: ["Bash(rm -rf", "Bash(curl.*|.*sh"],
-    banned_mcp_servers: ["shell", "terminal"],
-    min_score: 75,
-    max_severity: "high",
-    required_hooks: [
-      {
-        event: "PreToolUse",
-        pattern: "agentshield",
-        description: "AgentShield runtime monitor must be installed"
-      }
-    ],
-    banned_tools: ["Bash(*)"]
+    ]
   };
   return JSON.stringify(example, null, 2);
 }
@@ -11546,6 +11676,7 @@ var init_evaluate = __esm({
   "src/policy/evaluate.ts"() {
     "use strict";
     init_types();
+    init_presets();
     SEVERITY_ORDER2 = {
       critical: 0,
       high: 1,
@@ -11564,6 +11695,8 @@ __export(policy_exports, {
   PolicyPackSchema: () => PolicyPackSchema,
   evaluatePolicy: () => evaluatePolicy,
   generateExamplePolicy: () => generateExamplePolicy,
+  generatePolicyPack: () => generatePolicyPack,
+  listPolicyPacks: () => listPolicyPacks,
   loadPolicy: () => loadPolicy2,
   renderPolicyEvaluation: () => renderPolicyEvaluation
 });
@@ -11571,6 +11704,7 @@ var init_policy = __esm({
   "src/policy/index.ts"() {
     "use strict";
     init_evaluate();
+    init_presets();
     init_types();
   }
 });
@@ -16012,6 +16146,9 @@ function emitReportOutput(output, outputPath) {
   writeFileSync5(resolvedOutput, output);
   console.log(`Report written to: ${resolvedOutput}`);
 }
+function collectOption(value, previous) {
+  return [...previous, value];
+}
 program.command("scan").description("Scan a Claude Code configuration directory for security issues").option("-p, --path <path>", "Path to scan (default: ~/.claude or current dir)").option("-f, --format <format>", "Output format: terminal, json, markdown, html, sarif", "terminal").option("-o, --output <path>", "Write the primary report output to a file").option("--fix", "Auto-apply safe fixes", false).option("--opus", "Enable Opus 4.6 multi-agent deep analysis", false).option("--stream", "Stream Opus analysis in real-time", false).option("--injection", "Run active prompt injection testing against the config", false).option("--sandbox", "Execute hooks in sandbox and observe behavior", false).option("--taint", "Run taint analysis (data flow tracking)", false).option("--deep", "Run ALL analysis (injection + sandbox + taint + opus)", false).option("--log <path>", "Write structured scan log to file").option("--log-format <format>", "Log format: ndjson (default) or json", "ndjson").option("--corpus", "Run scanner validation against built-in attack corpus", false).option("--baseline <path>", "Compare against a baseline file and report regressions").option("--save-baseline <path>", "Save current scan results as a baseline file").option("--gate", "Fail if new critical/high findings or score drops (use with --baseline)", false).option("--supply-chain", "Verify MCP npm packages against known-bad list and typosquatting", false).option("--supply-chain-online", "Also query npm registry for metadata (requires network)", false).option("--policy <path>", "Validate against an organization policy file").option("--min-severity <severity>", "Minimum severity to report: critical, high, medium, low, info", "info").option("-v, --verbose", "Show detailed output", false).action(async (options) => {
   const targetPath = resolveTargetPath(options.path);
   if (!existsSync10(targetPath)) {
@@ -16443,12 +16580,20 @@ runtime.command("repair").description("Back up invalid runtime files and restore
   }
 });
 var policyCmd = program.command("policy").description("Organization-wide security policy management");
-policyCmd.command("init").description("Generate an example organization policy file").option("-o, --output <path>", "Output path", ".agentshield/policy.json").action(async (options) => {
-  const { generateExamplePolicy: generateExamplePolicy2 } = await Promise.resolve().then(() => (init_policy(), policy_exports));
+policyCmd.command("init").description("Generate an example organization policy file").option("-o, --output <path>", "Output path", ".agentshield/policy.json").option("--pack <pack>", "Policy pack preset: oss, team, enterprise, regulated, high-risk-hooks-mcp, ci-enforcement", "enterprise").option("--owner <owner>", "Policy owner identifier; repeat for multiple owners", collectOption, []).option("--name <name>", "Policy display name").action(async (options) => {
+  const { generateExamplePolicy: generateExamplePolicy2, listPolicyPacks: listPolicyPacks2, PolicyPackSchema: PolicyPackSchema2 } = await Promise.resolve().then(() => (init_policy(), policy_exports));
   const outputPath = resolve8(options.output);
+  const packResult = PolicyPackSchema2.safeParse(options.pack);
   if (existsSync10(outputPath)) {
     console.error(`
   Error: Policy file already exists at ${outputPath}
+`);
+    process.exit(1);
+  }
+  if (!packResult.success) {
+    const packs = listPolicyPacks2().map((pack) => pack.id).join(", ");
+    console.error(`
+  Error: Unknown policy pack "${options.pack}". Valid packs: ${packs}
 `);
     process.exit(1);
   }
@@ -16456,9 +16601,13 @@ policyCmd.command("init").description("Generate an example organization policy f
   if (!existsSync10(dir)) {
     mkdirSync5(dir, { recursive: true });
   }
-  writeFileSync5(outputPath, generateExamplePolicy2());
+  writeFileSync5(outputPath, generateExamplePolicy2(packResult.data, {
+    name: options.name,
+    owners: options.owner
+  }));
   console.log(`
   Example policy written to: ${outputPath}`);
+  console.log(`  Policy pack: ${packResult.data}`);
   console.log(`  Edit the file to match your organization's requirements.`);
   console.log(`  Then run: agentshield scan --policy ${options.output}
 `);

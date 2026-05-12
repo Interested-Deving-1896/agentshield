@@ -88,6 +88,16 @@ High-value `scan` options:
 - `--log <path>`
 - `--log-format ndjson|json`
 
+Policy preset generation:
+
+```bash
+agentshield policy init --pack enterprise --owner security@example.com
+agentshield policy init --pack regulated --name "Regulated Agent Policy"
+```
+
+Supported packs: `oss`, `team`, `enterprise`, `regulated`,
+`high-risk-hooks-mcp`, and `ci-enforcement`.
+
 The GitHub Action exposes the same organization policy gate through the
 `policy` input. It reports `policy-status` and `policy-violations` outputs,
 adds policy results to the job summary, emits policy violations into SARIF as

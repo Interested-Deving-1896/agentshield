@@ -4,7 +4,15 @@ export {
   renderPolicyEvaluation,
   generateExamplePolicy,
 } from "./evaluate.js";
+export {
+  generatePolicyPack,
+  listPolicyPacks,
+} from "./presets.js";
 export type { EvaluatePolicyOptions, LoadPolicyResult } from "./evaluate.js";
+export type {
+  GeneratePolicyPackOptions,
+  PolicyPackSummary,
+} from "./presets.js";
 export {
   OrgPolicySchema,
   PolicyExceptionSchema,
