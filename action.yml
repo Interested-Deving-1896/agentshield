@@ -27,6 +27,14 @@ inputs:
     description: "Path to write SARIF results when format is sarif"
     required: false
     default: "agentshield-results.sarif"
+  policy:
+    description: "Path to an AgentShield organization policy JSON file"
+    required: false
+    default: ""
+  fail-on-policy:
+    description: "Fail the action when the organization policy is non-compliant"
+    required: false
+    default: "true"
 
 outputs:
   score:
@@ -39,6 +47,10 @@ outputs:
     description: "Number of critical findings"
   sarif-path:
     description: "Path to the generated SARIF file when format is sarif"
+  policy-status:
+    description: "Organization policy status: not-run, compliant, non-compliant, or error"
+  policy-violations:
+    description: "Number of unsuppressed organization policy violations"
 
 runs:
   using: "node20"

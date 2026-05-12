@@ -14,6 +14,10 @@ import { scan } from "./scanner/index.js";
 import { calculateScore } from "./reporter/score.js";
 import { renderMarkdownReport } from "./reporter/json.js";
 import { renderSarifReport } from "./reporter/sarif.js";
+import {
+  renderPolicyJobSummary,
+  statusForPolicyEvaluation,
+} from "./action-policy.js";
 import type { Finding, Severity } from "./types.js";
 
 // ─── GitHub Actions Helpers ──────────────────────────────────
@@ -95,6 +99,8 @@ async function run(): Promise<void> {
   const baselinePath = getInput("baseline", "");
   const saveBaselinePath = getInput("save-baseline", "");
   const sarifOutput = getInput("sarif-output", "agentshield-results.sarif");
+  const policyPath = getInput("policy", "");
+  const failOnPolicy = getInput("fail-on-policy", "true") === "true";
 
   // Resolve and validate path
   const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
@@ -110,6 +116,10 @@ async function run(): Promise<void> {
   console.log(`  min-severity: ${minSeverity}`);
   console.log(`  fail-on-findings: ${failOnFindings}`);
   console.log(`  format: ${format}`);
+  if (policyPath) {
+    console.log(`  policy: ${policyPath}`);
+    console.log(`  fail-on-policy: ${failOnPolicy}`);
+  }
   console.log("");
 
   // Run scan
@@ -132,6 +142,8 @@ async function run(): Promise<void> {
   setOutput("grade", report.score.grade);
   setOutput("total-findings", String(report.summary.totalFindings));
   setOutput("critical-count", String(report.summary.critical));
+  setOutput("policy-status", "not-run");
+  setOutput("policy-violations", "0");
 
   if (format === "sarif") {
     const sarifPath = resolve(workspace, sarifOutput);
@@ -193,6 +205,59 @@ async function run(): Promise<void> {
       }
     } else {
       console.log(`::warning::Could not load baseline from ${baselinePath}. Skipping comparison.`);
+    }
+  }
+
+  if (policyPath) {
+    const { loadPolicy, evaluatePolicy, renderPolicyEvaluation } = await import(
+      "./policy/index.js"
+    );
+    const resolvedPolicyPath = resolve(workspace, policyPath);
+    const policyResult = loadPolicy(resolvedPolicyPath);
+
+    if (!policyResult.success) {
+      setOutput("policy-status", "error");
+      console.log(
+        `::error::AgentShield policy load failed: ${escapeAnnotation(policyResult.error)}`
+      );
+      writeJobSummary([
+        "",
+        "",
+        "## AgentShield Organization Policy",
+        "",
+        "- Status: error",
+        `- Error: ${policyResult.error}`,
+        "",
+      ].join("\n"));
+      if (failOnPolicy) {
+        process.exitCode = 1;
+        return;
+      }
+    } else {
+      const evaluation = evaluatePolicy(
+        policyResult.policy,
+        filteredResult.findings,
+        report.score,
+        result.target.files
+      );
+      const policyStatus = statusForPolicyEvaluation(evaluation);
+      setOutput("policy-status", policyStatus);
+      setOutput("policy-violations", String(evaluation.violations.length));
+      writeJobSummary(renderPolicyJobSummary(evaluation));
+      console.log(renderPolicyEvaluation(evaluation));
+
+      if (!evaluation.passed) {
+        for (const violation of evaluation.violations) {
+          const message = escapeAnnotation(violation.description);
+          console.log(
+            `::error::AgentShield policy violation ${violation.rule}: ${message}`
+          );
+        }
+        if (failOnPolicy) {
+          process.exitCode = 1;
+          return;
+        }
+      }
     }
   }
 

@@ -204,10 +204,426 @@ var init_baseline = __esm({
   }
 });
 
+// src/policy/types.ts
+import { z } from "zod";
+var SeveritySchema, PolicyPackSchema, PolicyExceptionSchema, OrgPolicySchema;
+var init_types2 = __esm({
+  "src/policy/types.ts"() {
+    "use strict";
+    SeveritySchema = z.enum(["critical", "high", "medium", "low", "info"]);
+    PolicyPackSchema = z.enum([
+      "oss",
+      "team",
+      "enterprise",
+      "regulated",
+      "high-risk-hooks-mcp",
+      "ci-enforcement"
+    ]);
+    PolicyExceptionSchema = z.object({
+      id: z.string().min(1),
+      rule: z.string().min(1),
+      owner: z.string().min(1),
+      reason: z.string().min(1),
+      expires_at: z.string().datetime(),
+      scope: z.string().optional(),
+      severity: SeveritySchema.optional(),
+      ticket: z.string().optional()
+    });
+    OrgPolicySchema = z.object({
+      version: z.literal(1),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      policy_pack: PolicyPackSchema.default("team"),
+      owners: z.array(z.string()).default([]),
+      exceptions: z.array(PolicyExceptionSchema).default([]),
+      /** Items that MUST appear in the permissions.deny list */
+      required_deny_list: z.array(z.string()).default([]),
+      /** MCP servers that are banned from use */
+      banned_mcp_servers: z.array(z.string()).default([]),
+      /** Minimum acceptable security score (0-100) */
+      min_score: z.number().int().min(0).max(100).default(60),
+      /** Maximum allowed severity for any single finding */
+      max_severity: SeveritySchema.default("critical"),
+      /** Hook patterns that must be present in settings */
+      required_hooks: z.array(
+        z.object({
+          event: z.enum(["PreToolUse", "PostToolUse", "SessionStart", "Stop"]),
+          pattern: z.string(),
+          description: z.string().optional()
+        })
+      ).default([]),
+      /** Tools that must NOT appear in the allow list */
+      banned_tools: z.array(z.string()).default([])
+    });
+  }
+});
+
+// src/policy/evaluate.ts
+import { readFileSync as readFileSync3, existsSync as existsSync3 } from "fs";
+function loadPolicy(policyPath) {
+  if (!existsSync3(policyPath)) {
+    return { success: false, error: `Policy file not found: ${policyPath}` };
+  }
+  try {
+    const raw = readFileSync3(policyPath, "utf-8");
+    const parsed = JSON.parse(raw);
+    return { success: true, policy: OrgPolicySchema.parse(parsed) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { success: false, error: message };
+  }
+}
+function evaluatePolicy(policy, findings, score, files, options = {}) {
+  const violations = [];
+  const now = options.now ?? /* @__PURE__ */ new Date();
+  if (score.numericScore < policy.min_score) {
+    violations.push({
+      rule: "min_score",
+      severity: "high",
+      description: `Security score ${score.numericScore} is below the required minimum of ${policy.min_score}.`,
+      expected: `Score >= ${policy.min_score}`,
+      actual: `Score = ${score.numericScore}`
+    });
+  }
+  const maxSeverityIndex = SEVERITY_ORDER[policy.max_severity];
+  const exceedingFindings = findings.filter(
+    (f) => SEVERITY_ORDER[f.severity] < maxSeverityIndex
+  );
+  if (exceedingFindings.length > 0) {
+    violations.push({
+      rule: "max_severity",
+      severity: "high",
+      description: `${exceedingFindings.length} finding(s) exceed the maximum allowed severity of "${policy.max_severity}".`,
+      expected: `No findings above ${policy.max_severity}`,
+      actual: `${exceedingFindings.length} finding(s) above threshold`
+    });
+  }
+  const denyList = extractDenyList(files);
+  for (const required of policy.required_deny_list) {
+    if (!denyList.some((d) => matchesDenyPattern(d, required))) {
+      violations.push({
+        rule: "required_deny_list",
+        severity: "medium",
+        description: `Required deny pattern "${required}" not found in permissions.deny list.`,
+        expected: `"${required}" in deny list`,
+        actual: "Missing from deny list"
+      });
+    }
+  }
+  const mcpServers = extractMcpServerNames(files);
+  for (const banned of policy.banned_mcp_servers) {
+    const found = mcpServers.filter((s) => matchesBanned(s, banned));
+    for (const server of found) {
+      violations.push({
+        rule: "banned_mcp_servers",
+        severity: "high",
+        description: `MCP server "${server}" is banned by organization policy.`,
+        expected: `"${banned}" not in MCP servers`,
+        actual: `"${server}" is configured`
+      });
+    }
+  }
+  const allowedTools = extractAllowList(files);
+  for (const banned of policy.banned_tools) {
+    const found = allowedTools.filter((t) => matchesDenyPattern(t, banned));
+    for (const tool of found) {
+      violations.push({
+        rule: "banned_tools",
+        severity: "high",
+        description: `Tool "${tool}" is banned by organization policy but appears in the allow list.`,
+        expected: `"${banned}" not in allow list`,
+        actual: `"${tool}" is allowed`
+      });
+    }
+  }
+  const configuredHooks = extractHookPatterns(files);
+  for (const required of policy.required_hooks) {
+    const found = configuredHooks.some(
+      (h) => h.event === required.event && h.command.includes(required.pattern)
+    );
+    if (!found) {
+      violations.push({
+        rule: "required_hooks",
+        severity: "medium",
+        description: required.description ?? `Required ${required.event} hook with pattern "${required.pattern}" not found.`,
+        expected: `${required.event} hook containing "${required.pattern}"`,
+        actual: "Not configured"
+      });
+    }
+  }
+  const exceptionResult = applyPolicyExceptions(
+    violations,
+    policy.exceptions ?? [],
+    now
+  );
+  const expiredExceptionViolations = buildExpiredExceptionViolations(
+    policy.exceptions ?? [],
+    now
+  );
+  const finalViolations = [
+    ...exceptionResult.violations,
+    ...expiredExceptionViolations
+  ];
+  return {
+    policyName: policy.name ?? "Organization Policy",
+    policyPack: policy.policy_pack,
+    owners: policy.owners ?? [],
+    passed: finalViolations.length === 0,
+    violations: finalViolations,
+    exceptionsApplied: exceptionResult.applied,
+    score: score.numericScore,
+    minScore: policy.min_score
+  };
+}
+function extractDenyList(files) {
+  const denyItems = [];
+  for (const file of files) {
+    if (file.type !== "settings-json") continue;
+    try {
+      const config = JSON.parse(file.content);
+      const deny = config?.permissions?.deny;
+      if (Array.isArray(deny)) {
+        denyItems.push(...deny.filter((d) => typeof d === "string"));
+      }
+    } catch {
+    }
+  }
+  return denyItems;
+}
+function extractAllowList(files) {
+  const allowItems = [];
+  for (const file of files) {
+    if (file.type !== "settings-json") continue;
+    try {
+      const config = JSON.parse(file.content);
+      const allow = config?.permissions?.allow;
+      if (Array.isArray(allow)) {
+        allowItems.push(...allow.filter((a) => typeof a === "string"));
+      }
+    } catch {
+    }
+  }
+  return allowItems;
+}
+function extractMcpServerNames(files) {
+  const names = [];
+  for (const file of files) {
+    if (file.type !== "mcp-json" && file.type !== "settings-json") continue;
+    try {
+      const config = JSON.parse(file.content);
+      const servers = config?.mcpServers;
+      if (servers && typeof servers === "object") {
+        names.push(...Object.keys(servers));
+      }
+    } catch {
+    }
+  }
+  return names;
+}
+function extractHookPatterns(files) {
+  const hooks = [];
+  for (const file of files) {
+    if (file.type !== "settings-json") continue;
+    try {
+      const config = JSON.parse(file.content);
+      const hookGroups = config?.hooks;
+      if (!hookGroups || typeof hookGroups !== "object") continue;
+      for (const [event, entries] of Object.entries(hookGroups)) {
+        if (!Array.isArray(entries)) continue;
+        for (const entry of entries) {
+          const hook = entry.hook;
+          if (typeof hook === "string") {
+            hooks.push({ event, command: hook });
+          }
+        }
+      }
+    } catch {
+    }
+  }
+  return hooks;
+}
+function matchesDenyPattern(actual, pattern) {
+  if (actual === pattern) return true;
+  if (actual.toLowerCase() === pattern.toLowerCase()) return true;
+  return actual.startsWith(pattern);
+}
+function matchesBanned(serverName, banned) {
+  if (serverName === banned) return true;
+  if (serverName.toLowerCase() === banned.toLowerCase()) return true;
+  if (banned.endsWith("*") && serverName.startsWith(banned.slice(0, -1))) {
+    return true;
+  }
+  return false;
+}
+function applyPolicyExceptions(violations, exceptions, now) {
+  const applied = [];
+  const remaining = [];
+  const activeExceptions = exceptions.filter(
+    (exception) => isExceptionActive(exception, now)
+  );
+  for (const violation of violations) {
+    const exception = activeExceptions.find(
+      (candidate) => exceptionMatchesViolation(candidate, violation)
+    );
+    if (!exception) {
+      remaining.push(violation);
+      continue;
+    }
+    applied.push({
+      id: exception.id,
+      rule: exception.rule,
+      owner: exception.owner,
+      reason: exception.reason,
+      expiresAt: exception.expires_at,
+      violation: violation.description
+    });
+  }
+  return { violations: remaining, applied };
+}
+function buildExpiredExceptionViolations(exceptions, now) {
+  return exceptions.filter((exception) => !isExceptionActive(exception, now)).map((exception) => ({
+    rule: "expired_exception",
+    severity: "high",
+    description: `Policy exception "${exception.id}" for rule "${exception.rule}" has expired.`,
+    expected: "Exception must have a future expires_at timestamp or be removed",
+    actual: `Expired at ${exception.expires_at}`
+  }));
+}
+function isExceptionActive(exception, now) {
+  const expiresAt = new Date(exception.expires_at);
+  if (Number.isNaN(expiresAt.getTime())) return false;
+  return expiresAt.getTime() >= now.getTime();
+}
+function exceptionMatchesViolation(exception, violation) {
+  if (exception.rule !== violation.rule) return false;
+  if (exception.severity && exception.severity !== violation.severity) {
+    return false;
+  }
+  if (!exception.scope) return true;
+  const scope = exception.scope.toLowerCase();
+  const haystack = [
+    violation.description,
+    violation.expected,
+    violation.actual
+  ].join("\n").toLowerCase();
+  return haystack.includes(scope);
+}
+function renderPolicyEvaluation(evaluation) {
+  const lines = [];
+  const divider = "\u2500".repeat(60);
+  lines.push("");
+  lines.push(`  ${divider}`);
+  lines.push(`  Organization Policy: ${evaluation.policyName}`);
+  lines.push(`  ${divider}`);
+  lines.push("");
+  if (evaluation.policyPack) {
+    lines.push(`  Policy Pack: ${evaluation.policyPack}`);
+  }
+  if (evaluation.owners && evaluation.owners.length > 0) {
+    lines.push(`  Owners: ${evaluation.owners.join(", ")}`);
+  }
+  lines.push("");
+  if (evaluation.passed) {
+    const hasExceptions = (evaluation.exceptionsApplied?.length ?? 0) > 0;
+    lines.push(`  Status: ${hasExceptions ? "COMPLIANT (WITH EXCEPTIONS)" : "COMPLIANT"}`);
+  } else {
+    lines.push("  Status: NON-COMPLIANT");
+    lines.push(`  Violations: ${evaluation.violations.length}`);
+  }
+  lines.push(`  Score: ${evaluation.score} (minimum: ${evaluation.minScore})`);
+  lines.push("");
+  if (evaluation.violations.length > 0) {
+    lines.push("  POLICY VIOLATIONS:");
+    for (const v of evaluation.violations) {
+      lines.push(`    [${v.severity.toUpperCase().padEnd(8)}] ${v.rule}: ${v.description}`);
+      lines.push(`               Expected: ${v.expected}`);
+      lines.push(`               Actual:   ${v.actual}`);
+    }
+    lines.push("");
+  }
+  if (evaluation.exceptionsApplied && evaluation.exceptionsApplied.length > 0) {
+    lines.push("  EXCEPTIONS APPLIED:");
+    for (const exception of evaluation.exceptionsApplied) {
+      lines.push(`    ${exception.id} (${exception.rule}) owner=${exception.owner} expires=${exception.expiresAt}`);
+      lines.push(`               Reason: ${exception.reason}`);
+    }
+    lines.push("");
+  }
+  lines.push(`  ${divider}`);
+  lines.push("");
+  return lines.join("\n");
+}
+function generateExamplePolicy() {
+  const example = {
+    version: 1,
+    name: "Acme Corp Security Policy",
+    description: "Organization-wide Claude Code security requirements",
+    policy_pack: "enterprise",
+    owners: ["security-platform@acme.example"],
+    exceptions: [
+      {
+        id: "AS-EX-001",
+        rule: "required_hooks",
+        owner: "security-platform@acme.example",
+        reason: "Legacy repository migration window",
+        expires_at: "2026-06-30T23:59:59.000Z",
+        scope: "agentshield",
+        ticket: "SEC-1234"
+      }
+    ],
+    required_deny_list: ["Bash(rm -rf", "Bash(curl.*|.*sh"],
+    banned_mcp_servers: ["shell", "terminal"],
+    min_score: 75,
+    max_severity: "high",
+    required_hooks: [
+      {
+        event: "PreToolUse",
+        pattern: "agentshield",
+        description: "AgentShield runtime monitor must be installed"
+      }
+    ],
+    banned_tools: ["Bash(*)"]
+  };
+  return JSON.stringify(example, null, 2);
+}
+var SEVERITY_ORDER;
+var init_evaluate = __esm({
+  "src/policy/evaluate.ts"() {
+    "use strict";
+    init_types2();
+    SEVERITY_ORDER = {
+      critical: 0,
+      high: 1,
+      medium: 2,
+      low: 3,
+      info: 4
+    };
+  }
+});
+
+// src/policy/index.ts
+var policy_exports = {};
+__export(policy_exports, {
+  OrgPolicySchema: () => OrgPolicySchema,
+  PolicyExceptionSchema: () => PolicyExceptionSchema,
+  PolicyPackSchema: () => PolicyPackSchema,
+  evaluatePolicy: () => evaluatePolicy,
+  generateExamplePolicy: () => generateExamplePolicy,
+  loadPolicy: () => loadPolicy,
+  renderPolicyEvaluation: () => renderPolicyEvaluation
+});
+var init_policy = __esm({
+  "src/policy/index.ts"() {
+    "use strict";
+    init_evaluate();
+    init_types2();
+  }
+});
+
 // src/action.ts
 import { resolve as resolve2 } from "path";
 import { dirname as dirname3 } from "path";
-import { existsSync as existsSync3 } from "fs";
+import { existsSync as existsSync4 } from "fs";
 import { appendFileSync, mkdirSync as mkdirSync2, writeFileSync as writeFileSync2 } from "fs";
 
 // src/scanner/discovery.ts
@@ -8721,6 +9137,51 @@ function normalizeUri(uri) {
   return uri.replace(/\\/g, "/");
 }
 
+// src/action-policy.ts
+function statusForPolicyEvaluation(evaluation) {
+  return evaluation.passed ? "compliant" : "non-compliant";
+}
+function renderPolicyJobSummary(evaluation) {
+  const status = statusForPolicyEvaluation(evaluation);
+  const lines = [
+    "",
+    "",
+    "## AgentShield Organization Policy",
+    "",
+    `- Status: ${status}`,
+    `- Policy: ${evaluation.policyName}`,
+    `- Score: ${evaluation.score} (minimum: ${evaluation.minScore})`,
+    `- Violations: ${evaluation.violations.length}`
+  ];
+  if (evaluation.policyPack) {
+    lines.push(`- Policy pack: ${evaluation.policyPack}`);
+  }
+  if (evaluation.owners && evaluation.owners.length > 0) {
+    lines.push(`- Owners: ${evaluation.owners.join(", ")}`);
+  }
+  if (evaluation.exceptionsApplied && evaluation.exceptionsApplied.length > 0) {
+    lines.push(`- Exceptions applied: ${evaluation.exceptionsApplied.length}`);
+  }
+  if (evaluation.violations.length > 0) {
+    lines.push("", "### Policy Violations", "");
+    for (const violation of evaluation.violations) {
+      lines.push(
+        `- ${violation.rule} (${violation.severity}): ${violation.description}`
+      );
+    }
+  }
+  if (evaluation.exceptionsApplied && evaluation.exceptionsApplied.length > 0) {
+    lines.push("", "### Exceptions Applied", "");
+    for (const exception of evaluation.exceptionsApplied) {
+      lines.push(
+        `- ${exception.id} (${exception.rule}) owner=${exception.owner} expires=${exception.expiresAt}`
+      );
+    }
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
 // src/action.ts
 function getInput(name, fallback) {
   const envKey = `INPUT_${name.replace(/ /g, "_").toUpperCase()}`;
@@ -8752,10 +9213,10 @@ function annotateError(file, line, message) {
 function escapeAnnotation(message) {
   return message.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
 }
-var SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"];
+var SEVERITY_ORDER2 = ["critical", "high", "medium", "low", "info"];
 function severityIndex(severity) {
-  const idx = SEVERITY_ORDER.indexOf(severity);
-  return idx === -1 ? SEVERITY_ORDER.length : idx;
+  const idx = SEVERITY_ORDER2.indexOf(severity);
+  return idx === -1 ? SEVERITY_ORDER2.length : idx;
 }
 function isAtOrAboveSeverity(finding, minSeverity) {
   return severityIndex(finding.severity) <= severityIndex(minSeverity);
@@ -8778,9 +9239,11 @@ async function run() {
   const baselinePath = getInput("baseline", "");
   const saveBaselinePath = getInput("save-baseline", "");
   const sarifOutput = getInput("sarif-output", "agentshield-results.sarif");
+  const policyPath = getInput("policy", "");
+  const failOnPolicy = getInput("fail-on-policy", "true") === "true";
   const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
   const targetPath = resolve2(workspace, inputPath);
-  if (!existsSync3(targetPath)) {
+  if (!existsSync4(targetPath)) {
     console.log(`::error::AgentShield: Path does not exist: ${targetPath}`);
     process.exitCode = 1;
     return;
@@ -8789,6 +9252,10 @@ async function run() {
   console.log(`  min-severity: ${minSeverity}`);
   console.log(`  fail-on-findings: ${failOnFindings}`);
   console.log(`  format: ${format}`);
+  if (policyPath) {
+    console.log(`  policy: ${policyPath}`);
+    console.log(`  fail-on-policy: ${failOnPolicy}`);
+  }
   console.log("");
   const result = scan(targetPath);
   const filteredResult = {
@@ -8801,6 +9268,8 @@ async function run() {
   setOutput("grade", report.score.grade);
   setOutput("total-findings", String(report.summary.totalFindings));
   setOutput("critical-count", String(report.summary.critical));
+  setOutput("policy-status", "not-run");
+  setOutput("policy-violations", "0");
   if (format === "sarif") {
     const sarifPath = resolve2(workspace, sarifOutput);
     mkdirSync2(dirname3(sarifPath), { recursive: true });
@@ -8848,6 +9317,54 @@ async function run() {
       }
     } else {
       console.log(`::warning::Could not load baseline from ${baselinePath}. Skipping comparison.`);
+    }
+  }
+  if (policyPath) {
+    const { loadPolicy: loadPolicy2, evaluatePolicy: evaluatePolicy2, renderPolicyEvaluation: renderPolicyEvaluation2 } = await Promise.resolve().then(() => (init_policy(), policy_exports));
+    const resolvedPolicyPath = resolve2(workspace, policyPath);
+    const policyResult = loadPolicy2(resolvedPolicyPath);
+    if (!policyResult.success) {
+      setOutput("policy-status", "error");
+      console.log(
+        `::error::AgentShield policy load failed: ${escapeAnnotation(policyResult.error)}`
+      );
+      writeJobSummary([
+        "",
+        "",
+        "## AgentShield Organization Policy",
+        "",
+        "- Status: error",
+        `- Error: ${policyResult.error}`,
+        ""
+      ].join("\n"));
+      if (failOnPolicy) {
+        process.exitCode = 1;
+        return;
+      }
+    } else {
+      const evaluation = evaluatePolicy2(
+        policyResult.policy,
+        filteredResult.findings,
+        report.score,
+        result.target.files
+      );
+      const policyStatus = statusForPolicyEvaluation(evaluation);
+      setOutput("policy-status", policyStatus);
+      setOutput("policy-violations", String(evaluation.violations.length));
+      writeJobSummary(renderPolicyJobSummary(evaluation));
+      console.log(renderPolicyEvaluation2(evaluation));
+      if (!evaluation.passed) {
+        for (const violation of evaluation.violations) {
+          const message = escapeAnnotation(violation.description);
+          console.log(
+            `::error::AgentShield policy violation ${violation.rule}: ${message}`
+          );
+        }
+        if (failOnPolicy) {
+          process.exitCode = 1;
+          return;
+        }
+      }
     }
   }
   if (failOnFindings && filteredResult.findings.length > 0) {
