@@ -498,7 +498,7 @@ agentshield scan [options]         Scan configuration directory
   --deep                           Run injection + sandbox + taint + opus together
   --log <path>                     Write structured scan logs to a file
   --log-format <format>            Log format: ndjson or json
-  --corpus                         Run built-in attack corpus validation
+  --corpus                         Run built-in attack corpus benchmark
   --supply-chain                   Verify MCP package provenance and risk
   --supply-chain-online            Include npm registry metadata
   --policy <path>                  Validate against an organization policy

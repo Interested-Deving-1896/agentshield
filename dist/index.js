@@ -8527,9 +8527,24 @@ function renderCorpusResults(result) {
   lines.push(`  Detected:        ${chalk.green(`${result.detected}`)}`);
   lines.push(`  Missed:          ${result.missed > 0 ? chalk.red(`${result.missed}`) : chalk.green("0")}`);
   lines.push(`  Detection rate:  ${rateColor(`${rate}%`)}`);
+  lines.push(
+    `  Regression gate: ${result.readyForRegressionGate ? chalk.green("READY") : chalk.red("FAILED")}`
+  );
   lines.push("");
   lines.push(renderBar("Detection", Math.round(result.detectionRate * 100)));
   lines.push("");
+  if (result.categoryBreakdown.length > 0) {
+    lines.push(chalk.bold("  Category Coverage"));
+    lines.push("");
+    for (const category of result.categoryBreakdown) {
+      const categoryRate = (category.detectionRate * 100).toFixed(0);
+      const categoryColor = category.missed === 0 ? chalk.green : chalk.red;
+      lines.push(
+        `    ${categoryColor(`${category.detected}/${category.totalConfigs}`)} ${category.category} (${categoryRate}%)`
+      );
+    }
+    lines.push("");
+  }
   const missed = result.results.filter((r) => !r.detected);
   if (missed.length > 0) {
     lines.push(chalk.red.bold("  Missed Attacks (scanner gaps)"));
@@ -11086,10 +11101,14 @@ function validateCorpus(ruleScanFn, rules) {
   }
   const passed = results.filter((r) => r.passed).length;
   const failed = results.filter((r) => !r.passed).length;
+  const detectionRate = vulnerableConfigs.length > 0 ? passed / vulnerableConfigs.length : 1;
   return {
     totalConfigs: vulnerableConfigs.length,
     passed,
     failed,
+    detectionRate,
+    readyForRegressionGate: failed === 0,
+    categoryBreakdown: buildCategoryBreakdown(results),
     results
   };
 }
@@ -11125,12 +11144,33 @@ function validateSingleConfig(config, ruleScanFn, rules) {
   return {
     configId: config.id,
     configName: config.name,
+    category: config.category,
     expectedFindings: expectedTotal,
     actualFindings: actualTotal,
     missingRules,
     extraRules,
     passed: missingRules.length === 0
   };
+}
+function buildCategoryBreakdown(results) {
+  const byCategory = /* @__PURE__ */ new Map();
+  for (const result of results) {
+    const current = byCategory.get(result.category) ?? { total: 0, detected: 0 };
+    byCategory.set(result.category, {
+      total: current.total + 1,
+      detected: current.detected + (result.passed ? 1 : 0)
+    });
+  }
+  return [...byCategory.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([category, counts]) => {
+    const missed = counts.total - counts.detected;
+    return {
+      category,
+      totalConfigs: counts.total,
+      detected: counts.detected,
+      missed,
+      detectionRate: counts.total > 0 ? counts.detected / counts.total : 1
+    };
+  });
 }
 function getCorpusConfigs() {
   return vulnerableConfigs;
@@ -16368,6 +16408,8 @@ async function runCorpusValidation(_targetPath) {
       detected,
       missed,
       detectionRate: totalAttacks > 0 ? detected / totalAttacks : 0,
+      readyForRegressionGate: validation.readyForRegressionGate,
+      categoryBreakdown: validation.categoryBreakdown,
       results: validation.results.map((r) => ({
         attackId: r.configId,
         attackName: r.configName,

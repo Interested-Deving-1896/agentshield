@@ -221,6 +221,18 @@ describe("validateCorpus", () => {
     expect(validation.passed).toBeGreaterThan(0);
   });
 
+  it("summarizes category-level benchmark readiness", () => {
+    const validation = validateCorpus(defaultRuleScanFn, allRules);
+    const injection = validation.categoryBreakdown.find((c) => c.category === "injection");
+
+    expect(validation.detectionRate).toBe(1);
+    expect(validation.readyForRegressionGate).toBe(true);
+    expect(injection).toBeDefined();
+    expect(injection!.totalConfigs).toBeGreaterThan(0);
+    expect(injection!.missed).toBe(0);
+    expect(injection!.detectionRate).toBe(1);
+  });
+
   it("marks configs as failed when expected findings are missing", () => {
     // Use an empty scanner that returns nothing
     const emptyFn = () => new Map<string, ReadonlyArray<Finding>>();
@@ -228,6 +240,9 @@ describe("validateCorpus", () => {
     const validation = validateCorpus(emptyFn, allRules);
 
     expect(validation.failed).toBe(vulnerableConfigs.length);
+    expect(validation.detectionRate).toBe(0);
+    expect(validation.readyForRegressionGate).toBe(false);
+    expect(validation.categoryBreakdown.every((c) => c.missed === c.totalConfigs)).toBe(true);
 
     for (const result of validation.results) {
       expect(result.passed).toBe(false);

@@ -144,6 +144,8 @@ async function runCorpusValidation(
       detected,
       missed,
       detectionRate: totalAttacks > 0 ? detected / totalAttacks : 0,
+      readyForRegressionGate: validation.readyForRegressionGate,
+      categoryBreakdown: validation.categoryBreakdown,
       results: validation.results.map((r: { configId: string; configName: string; passed: boolean; missingRules: ReadonlyArray<string> }) => ({
         attackId: r.configId,
         attackName: r.configName,

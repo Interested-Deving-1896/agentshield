@@ -10,6 +10,7 @@ export type { VulnerableConfig } from "./vulnerable-configs.js";
 export interface CorpusValidationResult {
   readonly configId: string;
   readonly configName: string;
+  readonly category: string;
   readonly expectedFindings: number;
   readonly actualFindings: number;
   readonly missingRules: ReadonlyArray<string>;
@@ -17,10 +18,21 @@ export interface CorpusValidationResult {
   readonly passed: boolean;
 }
 
+export interface CorpusCategoryBreakdown {
+  readonly category: string;
+  readonly totalConfigs: number;
+  readonly detected: number;
+  readonly missed: number;
+  readonly detectionRate: number;
+}
+
 export interface CorpusValidation {
   readonly totalConfigs: number;
   readonly passed: number;
   readonly failed: number;
+  readonly detectionRate: number;
+  readonly readyForRegressionGate: boolean;
+  readonly categoryBreakdown: ReadonlyArray<CorpusCategoryBreakdown>;
   readonly results: ReadonlyArray<CorpusValidationResult>;
 }
 
@@ -62,11 +74,15 @@ export function validateCorpus(ruleScanFn: RuleScanFn, rules: ReadonlyArray<Rule
 
   const passed = results.filter((r) => r.passed).length;
   const failed = results.filter((r) => !r.passed).length;
+  const detectionRate = vulnerableConfigs.length > 0 ? passed / vulnerableConfigs.length : 1;
 
   return {
     totalConfigs: vulnerableConfigs.length,
     passed,
     failed,
+    detectionRate,
+    readyForRegressionGate: failed === 0,
+    categoryBreakdown: buildCategoryBreakdown(results),
     results,
   };
 }
@@ -120,12 +136,40 @@ function validateSingleConfig(
   return {
     configId: config.id,
     configName: config.name,
+    category: config.category,
     expectedFindings: expectedTotal,
     actualFindings: actualTotal,
     missingRules,
     extraRules,
     passed: missingRules.length === 0,
   };
+}
+
+function buildCategoryBreakdown(
+  results: ReadonlyArray<CorpusValidationResult>
+): ReadonlyArray<CorpusCategoryBreakdown> {
+  const byCategory = new Map<string, { total: number; detected: number }>();
+
+  for (const result of results) {
+    const current = byCategory.get(result.category) ?? { total: 0, detected: 0 };
+    byCategory.set(result.category, {
+      total: current.total + 1,
+      detected: current.detected + (result.passed ? 1 : 0),
+    });
+  }
+
+  return [...byCategory.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([category, counts]) => {
+      const missed = counts.total - counts.detected;
+      return {
+        category,
+        totalConfigs: counts.total,
+        detected: counts.detected,
+        missed,
+        detectionRate: counts.total > 0 ? counts.detected / counts.total : 1,
+      };
+    });
 }
 
 // ─── Helpers ──────────────────────────────────────────────

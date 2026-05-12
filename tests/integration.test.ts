@@ -162,6 +162,11 @@ function makeCorpusResult(
     detected: 47,
     missed: 3,
     detectionRate: 0.94,
+    readyForRegressionGate: false,
+    categoryBreakdown: [
+      { category: "secrets", totalConfigs: 1, detected: 1, missed: 0, detectionRate: 1 },
+      { category: "injection", totalConfigs: 2, detected: 1, missed: 1, detectionRate: 0.5 },
+    ],
     results: [
       { attackId: "ATK-001", attackName: "Hardcoded API key", detected: true, ruleId: "SEC-001" },
       { attackId: "ATK-002", attackName: "Bash(*) wildcard", detected: true, ruleId: "PERM-001" },
@@ -357,6 +362,10 @@ describe("integration", () => {
       expect(output).toContain("Total attacks:   50");
       expect(output).toContain("47");
       expect(output).toContain("94.0%");
+      expect(output).toContain("Category Coverage");
+      expect(output).toContain("injection");
+      expect(output).toContain("1/2");
+      expect(output).toContain("Regression gate: FAILED");
       expect(output).toContain("Missed Attacks");
       expect(output).toContain("Indirect prompt injection");
     });
@@ -367,6 +376,10 @@ describe("integration", () => {
         detected: 10,
         missed: 0,
         detectionRate: 1.0,
+        readyForRegressionGate: true,
+        categoryBreakdown: [
+          { category: "injection", totalConfigs: 10, detected: 10, missed: 0, detectionRate: 1 },
+        ],
         results: [
           { attackId: "ATK-001", attackName: "Test", detected: true, ruleId: "R-001" },
         ],
@@ -374,6 +387,7 @@ describe("integration", () => {
       const output = renderCorpusResults(result);
 
       expect(output).toContain("100.0%");
+      expect(output).toContain("Regression gate: READY");
       expect(output).not.toContain("Missed Attacks");
     });
   });
@@ -489,6 +503,8 @@ describe("integration", () => {
       const result: CorpusValidationResult = makeCorpusResult();
       expect(result.totalAttacks).toBe(50);
       expect(result.detectionRate).toBe(0.94);
+      expect(result.categoryBreakdown[0].category).toBe("secrets");
+      expect(result.readyForRegressionGate).toBe(false);
     });
 
     it("DeepScanResult type is valid with all nulls", () => {
