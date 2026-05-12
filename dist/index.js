@@ -16569,6 +16569,7 @@ program.command("scan").description("Scan a Claude Code configuration directory 
       console.log(message);
     }
   };
+  const writeAuxiliaryOutput = writePolicyOutput;
   if (options.policy) {
     logger.log({ level: "info", phase: "policy", message: "Validating against organization policy" });
     try {
@@ -16631,7 +16632,7 @@ program.command("scan").description("Scan a Claude Code configuration directory 
   if (options.saveBaseline) {
     const { saveBaseline: saveBaseline2 } = await Promise.resolve().then(() => (init_baseline(), baseline_exports));
     saveBaseline2(filteredResult.findings, report.score, options.saveBaseline);
-    console.log(`
+    writeAuxiliaryOutput(`
   Baseline saved to: ${options.saveBaseline}
 `);
     logger.log({ level: "info", phase: "baseline", message: `Baseline saved to ${options.saveBaseline}` });
@@ -16645,7 +16646,7 @@ program.command("scan").description("Scan a Claude Code configuration directory 
 `);
     } else {
       const comparison = compareBaseline2(baseline, filteredResult.findings, report.score);
-      console.log(renderComparison2(comparison));
+      writeAuxiliaryOutput(renderComparison2(comparison));
       logger.log({
         level: comparison.isRegression ? "warn" : "info",
         phase: "baseline",
@@ -16653,7 +16654,7 @@ program.command("scan").description("Scan a Claude Code configuration directory 
       });
       if (options.gate) {
         const gateResult = evaluateGate2(comparison);
-        console.log(renderGateResult2(gateResult));
+        writeAuxiliaryOutput(renderGateResult2(gateResult));
         if (!gateResult.passed) {
           logger.log({ level: "error", phase: "gate", message: `Gate FAILED: ${gateResult.reasons.join("; ")}` });
           process.exit(3);

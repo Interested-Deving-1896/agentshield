@@ -294,6 +294,7 @@ program
         console.log(message);
       }
     };
+    const writeAuxiliaryOutput = writePolicyOutput;
 
     // ── Phase 1c: Organization policy validation ──────────
     if (options.policy) {
@@ -362,7 +363,7 @@ program
     if (options.saveBaseline) {
       const { saveBaseline } = await import("./baseline/index.js");
       saveBaseline(filteredResult.findings, report.score, options.saveBaseline);
-      console.log(`\n  Baseline saved to: ${options.saveBaseline}\n`);
+      writeAuxiliaryOutput(`\n  Baseline saved to: ${options.saveBaseline}\n`);
       logger.log({ level: "info", phase: "baseline", message: `Baseline saved to ${options.saveBaseline}` });
     }
 
@@ -374,7 +375,7 @@ program
         console.error(`\n  Error: Could not load baseline from ${options.baseline}\n`);
       } else {
         const comparison = compareBaseline(baseline, filteredResult.findings, report.score);
-        console.log(renderComparison(comparison));
+        writeAuxiliaryOutput(renderComparison(comparison));
         logger.log({
           level: comparison.isRegression ? "warn" : "info",
           phase: "baseline",
@@ -383,7 +384,7 @@ program
 
         if (options.gate) {
           const gateResult = evaluateGate(comparison);
-          console.log(renderGateResult(gateResult));
+          writeAuxiliaryOutput(renderGateResult(gateResult));
           if (!gateResult.passed) {
             logger.log({ level: "error", phase: "gate", message: `Gate FAILED: ${gateResult.reasons.join("; ")}` });
             process.exit(3);

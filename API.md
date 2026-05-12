@@ -113,6 +113,14 @@ adds policy results to the job summary, emits policy violations into SARIF as
 fails on non-compliance by default. Set `fail-on-policy: "false"` to collect
 policy evidence without failing the workflow.
 
+The GitHub Action also exposes baseline drift through the `baseline` and
+`save-baseline` inputs. It reports `baseline-path`, `baseline-status`,
+`new-findings`, `resolved-findings`, `unchanged-findings`, and `score-delta`
+outputs, appends a baseline drift block to the job summary, and emits
+annotations for newly introduced findings. Set `fail-on-findings: "false"` when
+the workflow should fail only on baseline drift instead of every current
+finding.
+
 Policy files use schema version `1`. Enterprise policy metadata is optional but
 recommended for CI gates:
 
@@ -150,6 +158,10 @@ The supported machine-readable scanner contract today is the JSON report returne
 ```bash
 agentshield scan --format json
 ```
+
+Baseline comparison output is treated as auxiliary output. When JSON or SARIF is
+written to stdout, baseline save/compare and gate text is written to stderr so
+the primary machine-readable report remains parseable.
 
 Top-level shape:
 

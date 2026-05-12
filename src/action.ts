@@ -18,6 +18,11 @@ import {
   renderPolicyJobSummary,
   statusForPolicyEvaluation,
 } from "./action-policy.js";
+import {
+  renderBaselineJobSummary,
+  renderMissingBaselineJobSummary,
+  statusForBaselineGate,
+} from "./action-baseline.js";
 import type { PolicyEvaluation } from "./policy/index.js";
 import type { Finding, Severity } from "./types.js";
 
@@ -143,6 +148,11 @@ async function run(): Promise<void> {
   setOutput("grade", report.score.grade);
   setOutput("total-findings", String(report.summary.totalFindings));
   setOutput("critical-count", String(report.summary.critical));
+  setOutput("baseline-status", "not-run");
+  setOutput("new-findings", "0");
+  setOutput("resolved-findings", "0");
+  setOutput("unchanged-findings", "0");
+  setOutput("score-delta", "0");
   setOutput("policy-status", "not-run");
   setOutput("policy-violations", "0");
 
@@ -246,6 +256,7 @@ async function run(): Promise<void> {
 
       setOutput("new-findings", String(comparison.newFindings.length));
       setOutput("resolved-findings", String(comparison.resolvedFindings.length));
+      setOutput("unchanged-findings", String(comparison.unchangedCount));
       setOutput("score-delta", String(comparison.scoreDelta));
 
       // Emit annotations only for NEW findings (regression-only mode)
@@ -256,6 +267,8 @@ async function run(): Promise<void> {
       }
 
       const gateResult = evaluateGate(comparison);
+      setOutput("baseline-status", statusForBaselineGate(gateResult));
+      writeJobSummary(renderBaselineJobSummary(comparison, gateResult));
       if (!gateResult.passed) {
         console.log("");
         console.log(`::error::AgentShield gate FAILED: ${gateResult.reasons.join("; ")}`);
@@ -265,6 +278,8 @@ async function run(): Promise<void> {
         console.log("Baseline gate: PASSED");
       }
     } else {
+      setOutput("baseline-status", "missing");
+      writeJobSummary(renderMissingBaselineJobSummary(baselinePath));
       console.log(`::warning::Could not load baseline from ${baselinePath}. Skipping comparison.`);
     }
   }

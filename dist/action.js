@@ -9501,6 +9501,71 @@ function formatExceptionDays(daysUntilExpiry) {
   return Number.isFinite(daysUntilExpiry) ? String(daysUntilExpiry) : "invalid";
 }
 
+// src/action-baseline.ts
+function statusForBaselineGate(result) {
+  return result.passed ? "passed" : "failed";
+}
+function renderBaselineJobSummary(comparison, gateResult) {
+  const status = statusForBaselineGate(gateResult);
+  const lines = [
+    "",
+    "",
+    "## AgentShield Baseline Drift",
+    "",
+    `- Status: ${status}`,
+    `- Baseline timestamp: ${comparison.baselineTimestamp}`,
+    `- Score: ${comparison.baselineScore} -> ${comparison.currentScore} (${formatScoreDelta(comparison.scoreDelta)})`,
+    `- New findings: ${comparison.newFindings.length}`,
+    `- Resolved findings: ${comparison.resolvedFindings.length}`,
+    `- Unchanged findings: ${comparison.unchangedCount}`,
+    `- New critical findings: ${comparison.newCriticalCount}`,
+    `- New high findings: ${comparison.newHighCount}`
+  ];
+  if (gateResult.reasons.length > 0) {
+    lines.push("", "### Gate Reasons", "");
+    for (const reason of gateResult.reasons) {
+      lines.push(`- ${reason}`);
+    }
+  }
+  if (comparison.newFindings.length > 0) {
+    lines.push("", "### New Findings", "");
+    for (const finding of comparison.newFindings.slice(0, 20)) {
+      lines.push(
+        `- ${finding.severity}: ${finding.title} (${finding.file})`
+      );
+    }
+    if (comparison.newFindings.length > 20) {
+      lines.push(`- ...${comparison.newFindings.length - 20} more`);
+    }
+  }
+  if (comparison.resolvedFindings.length > 0) {
+    lines.push("", "### Resolved Findings", "");
+    for (const finding of comparison.resolvedFindings.slice(0, 20)) {
+      lines.push(`- ${finding.severity}: ${finding.title} (${finding.file})`);
+    }
+    if (comparison.resolvedFindings.length > 20) {
+      lines.push(`- ...${comparison.resolvedFindings.length - 20} more`);
+    }
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+function renderMissingBaselineJobSummary(baselinePath) {
+  return [
+    "",
+    "",
+    "## AgentShield Baseline Drift",
+    "",
+    "- Status: missing",
+    `- Baseline path: ${baselinePath}`,
+    "- Comparison skipped because the baseline file could not be loaded.",
+    ""
+  ].join("\n");
+}
+function formatScoreDelta(delta) {
+  return delta > 0 ? `+${delta}` : String(delta);
+}
+
 // src/action.ts
 function getInput(name, fallback) {
   const envKey = `INPUT_${name.replace(/ /g, "_").toUpperCase()}`;
@@ -9587,6 +9652,11 @@ async function run() {
   setOutput("grade", report.score.grade);
   setOutput("total-findings", String(report.summary.totalFindings));
   setOutput("critical-count", String(report.summary.critical));
+  setOutput("baseline-status", "not-run");
+  setOutput("new-findings", "0");
+  setOutput("resolved-findings", "0");
+  setOutput("unchanged-findings", "0");
+  setOutput("score-delta", "0");
   setOutput("policy-status", "not-run");
   setOutput("policy-violations", "0");
   let policyEvaluation = null;
@@ -9673,6 +9743,7 @@ async function run() {
       const comparison = compareBaseline2(baseline, filteredResult.findings, report.score);
       setOutput("new-findings", String(comparison.newFindings.length));
       setOutput("resolved-findings", String(comparison.resolvedFindings.length));
+      setOutput("unchanged-findings", String(comparison.unchangedCount));
       setOutput("score-delta", String(comparison.scoreDelta));
       if (comparison.newFindings.length > 0) {
         console.log("");
@@ -9680,6 +9751,8 @@ async function run() {
         emitAnnotations(comparison.newFindings);
       }
       const gateResult = evaluateGate2(comparison);
+      setOutput("baseline-status", statusForBaselineGate(gateResult));
+      writeJobSummary(renderBaselineJobSummary(comparison, gateResult));
       if (!gateResult.passed) {
         console.log("");
         console.log(`::error::AgentShield gate FAILED: ${gateResult.reasons.join("; ")}`);
@@ -9689,6 +9762,8 @@ async function run() {
         console.log("Baseline gate: PASSED");
       }
     } else {
+      setOutput("baseline-status", "missing");
+      writeJobSummary(renderMissingBaselineJobSummary(baselinePath));
       console.log(`::warning::Could not load baseline from ${baselinePath}. Skipping comparison.`);
     }
   }
