@@ -90,9 +90,10 @@ High-value `scan` options:
 
 The GitHub Action exposes the same organization policy gate through the
 `policy` input. It reports `policy-status` and `policy-violations` outputs,
-adds policy results to the job summary, and fails on non-compliance by default.
-Set `fail-on-policy: "false"` to collect policy evidence without failing the
-workflow.
+adds policy results to the job summary, emits policy violations into SARIF as
+`agentshield-policy/*` code-scanning results when SARIF output is enabled, and
+fails on non-compliance by default. Set `fail-on-policy: "false"` to collect
+policy evidence without failing the workflow.
 
 Policy files use schema version `1`. Enterprise policy metadata is optional but
 recommended for CI gates:
