@@ -403,6 +403,27 @@ function isInsideQuotedString(content: string, matchIndex: number): boolean {
   return inSingle || inDouble;
 }
 
+function isInsideRegexLiteral(line: string, relativeIndex: number): boolean {
+  const before = line.slice(0, relativeIndex);
+  const after = line.slice(relativeIndex);
+
+  return /(?:^|[=\s(:[,])\/[^/\n]*$/.test(before) && /^[^/\n]*\//.test(after);
+}
+
+function isRegexLikeAlternationLiteral(content: string, matchIndex: number): boolean {
+  const line = getLineContentAtIndex(content, matchIndex);
+  const { start } = getLineBounds(content, matchIndex);
+  const relativeIndex = matchIndex - start;
+  const beforeMatch = line.slice(0, relativeIndex);
+  const afterMatch = line.slice(relativeIndex);
+  const isPatternContainer = isInsideQuotedString(content, matchIndex) || isInsideRegexLiteral(line, relativeIndex);
+
+  if (!isPatternContainer) return false;
+  if (!beforeMatch.includes("|") && !afterMatch.includes("|")) return false;
+
+  return /\b(?:credential|password|pattern|regex|secret|token)\b/i.test(line);
+}
+
 /**
  * Checks whether the hook command is a blocking guard pattern — a PreToolUse
  * hook that uses `exit 2` (Claude Code's "reject" exit code) to block
@@ -1598,7 +1619,11 @@ export const hookRules: ReadonlyArray<Rule> = [
 
       for (const { pattern, description } of userModPatterns) {
         const matches = findAllHookMatches(file, pattern);
-        for (const { match, line } of matches) {
+        for (const { match, line, content } of matches) {
+          if (isRegexLikeAlternationLiteral(content, match.index ?? 0)) {
+            continue;
+          }
+
           findings.push({
             id: `hooks-user-mod-${match.index}`,
             severity: "critical",
