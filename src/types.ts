@@ -335,12 +335,22 @@ export interface CorpusValidationResult {
   readonly detected: number;
   readonly missed: number;
   readonly detectionRate: number;
+  readonly readyForRegressionGate: boolean;
+  readonly categoryBreakdown: ReadonlyArray<CorpusCategoryBreakdown>;
   readonly results: ReadonlyArray<{
     readonly attackId: string;
     readonly attackName: string;
     readonly detected: boolean;
     readonly ruleId?: string;
   }>;
+}
+
+export interface CorpusCategoryBreakdown {
+  readonly category: string;
+  readonly totalConfigs: number;
+  readonly detected: number;
+  readonly missed: number;
+  readonly detectionRate: number;
 }
 
 // ─── Scan Log Entry ───────────────────────────────────────

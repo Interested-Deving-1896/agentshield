@@ -92,6 +92,10 @@ High-value `scan` options:
 - `--log <path>`
 - `--log-format ndjson|json`
 
+`--corpus` runs the built-in attack corpus as a regression benchmark and
+reports category coverage plus whether the gate is ready for continuous rule
+hardening.
+
 Policy preset generation:
 
 ```bash

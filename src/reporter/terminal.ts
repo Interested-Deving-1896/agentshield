@@ -378,11 +378,27 @@ export function renderCorpusResults(
   lines.push(`  Detected:        ${chalk.green(`${result.detected}`)}`);
   lines.push(`  Missed:          ${result.missed > 0 ? chalk.red(`${result.missed}`) : chalk.green("0")}`);
   lines.push(`  Detection rate:  ${rateColor(`${rate}%`)}`);
+  lines.push(
+    `  Regression gate: ${result.readyForRegressionGate ? chalk.green("READY") : chalk.red("FAILED")}`
+  );
   lines.push("");
 
   // Detection rate bar
   lines.push(renderBar("Detection", Math.round(result.detectionRate * 100)));
   lines.push("");
+
+  if (result.categoryBreakdown.length > 0) {
+    lines.push(chalk.bold("  Category Coverage"));
+    lines.push("");
+    for (const category of result.categoryBreakdown) {
+      const categoryRate = (category.detectionRate * 100).toFixed(0);
+      const categoryColor = category.missed === 0 ? chalk.green : chalk.red;
+      lines.push(
+        `    ${categoryColor(`${category.detected}/${category.totalConfigs}`)} ${category.category} (${categoryRate}%)`
+      );
+    }
+    lines.push("");
+  }
 
   // Show missed attacks (these need attention)
   const missed = result.results.filter((r) => !r.detected);
