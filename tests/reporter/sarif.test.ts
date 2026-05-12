@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderSarifReport } from "../../src/reporter/sarif.js";
+import type { PolicyEvaluation } from "../../src/policy/index.js";
 import type { SecurityReport } from "../../src/types.js";
 
 function makeReport(overrides: Partial<SecurityReport> = {}): SecurityReport {
@@ -22,6 +23,22 @@ function makeReport(overrides: Partial<SecurityReport> = {}): SecurityReport {
       filesScanned: 4,
       autoFixable: 0,
     },
+    ...overrides,
+  };
+}
+
+function makePolicyEvaluation(
+  overrides: Partial<PolicyEvaluation> = {}
+): PolicyEvaluation {
+  return {
+    policyName: "Enterprise Policy",
+    policyPack: "enterprise",
+    owners: ["security@example.com"],
+    passed: true,
+    violations: [],
+    exceptionsApplied: [],
+    score: 84,
+    minScore: 75,
     ...overrides,
   };
 }
@@ -159,5 +176,73 @@ describe("renderSarifReport", () => {
     expect(
       sarif.runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri
     ).toBe(".claude/hooks/scan.ps1");
+  });
+
+  it("adds organization policy violations as code-scanning results", () => {
+    const sarif = JSON.parse(renderSarifReport(makeReport(), {
+      policyEvaluation: makePolicyEvaluation({
+        passed: false,
+        violations: [
+          {
+            rule: "min_score",
+            severity: "high",
+            description: "Security score is below the required minimum.",
+            expected: "Score >= 90",
+            actual: "Score = 84",
+          },
+        ],
+      }),
+      policyUri: ".agentshield\\policy.json",
+    }));
+
+    expect(sarif.runs[0].tool.driver.rules).toContainEqual(
+      expect.objectContaining({
+        id: "agentshield-policy/min_score",
+        name: "Organization policy: min_score",
+        properties: expect.objectContaining({
+          category: "organization-policy",
+          severity: "high",
+          policyName: "Enterprise Policy",
+          policyPack: "enterprise",
+          owners: ["security@example.com"],
+          tags: ["security", "agent-config", "organization-policy"],
+        }),
+      })
+    );
+    expect(sarif.runs[0].results).toContainEqual(
+      expect.objectContaining({
+        ruleId: "agentshield-policy/min_score",
+        level: "error",
+        message: { text: "Security score is below the required minimum." },
+        locations: [
+          {
+            physicalLocation: {
+              artifactLocation: { uri: ".agentshield/policy.json" },
+            },
+          },
+        ],
+        properties: expect.objectContaining({
+          source: "organization-policy",
+          policyName: "Enterprise Policy",
+          expected: "Score >= 90",
+          actual: "Score = 84",
+        }),
+      })
+    );
+  });
+
+  it("records compliant policy metadata without synthetic results", () => {
+    const sarif = JSON.parse(renderSarifReport(makeReport(), {
+      policyEvaluation: makePolicyEvaluation(),
+      policyUri: ".agentshield/policy.json",
+    }));
+
+    expect(sarif.runs[0].properties).toMatchObject({
+      policyStatus: "compliant",
+      policyViolations: 0,
+      policyName: "Enterprise Policy",
+      policyPack: "enterprise",
+    });
+    expect(sarif.runs[0].results).toHaveLength(0);
   });
 });

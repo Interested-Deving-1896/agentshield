@@ -11159,206 +11159,10 @@ var init_corpus = __esm({
   }
 });
 
-// src/baseline/types.ts
-var DEFAULT_GATE_CONFIG;
-var init_types = __esm({
-  "src/baseline/types.ts"() {
-    "use strict";
-    DEFAULT_GATE_CONFIG = {
-      maxNewFindings: 0,
-      maxScoreDrop: 5,
-      failOnNewCritical: true,
-      failOnNewHigh: true
-    };
-  }
-});
-
-// src/baseline/compare.ts
-import { readFileSync as readFileSync6, writeFileSync as writeFileSync4, existsSync as existsSync8 } from "fs";
-import { dirname as dirname4 } from "path";
-import { mkdirSync as mkdirSync4 } from "fs";
-function fingerprintFinding2(finding) {
-  return `${finding.id}::${finding.file}::${finding.evidence ?? ""}`;
-}
-function saveBaseline(findings, score, outputPath) {
-  const serialized = {
-    version: 1,
-    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    score,
-    findings: findings.map((f) => ({
-      id: f.id,
-      severity: f.severity,
-      category: f.category,
-      title: f.title,
-      file: f.file,
-      evidence: f.evidence,
-      fingerprint: fingerprintFinding2(f)
-    }))
-  };
-  const dir = dirname4(outputPath);
-  if (!existsSync8(dir)) {
-    mkdirSync4(dir, { recursive: true });
-  }
-  writeFileSync4(outputPath, JSON.stringify(serialized, null, 2));
-}
-function loadBaseline(baselinePath) {
-  if (!existsSync8(baselinePath)) return null;
-  try {
-    const raw = readFileSync6(baselinePath, "utf-8");
-    const parsed = JSON.parse(raw);
-    if (parsed.version !== 1 || !Array.isArray(parsed.findings)) {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-function compareBaseline(baseline, currentFindings, currentScore) {
-  const baselineFingerprints = new Set(
-    baseline.findings.map((f) => f.fingerprint)
-  );
-  const currentFingerprints = new Set(
-    currentFindings.map(fingerprintFinding2)
-  );
-  const newFindings = currentFindings.filter(
-    (f) => !baselineFingerprints.has(fingerprintFinding2(f))
-  );
-  const resolvedFindings = baseline.findings.filter(
-    (f) => !currentFingerprints.has(f.fingerprint)
-  );
-  const unchangedCount = currentFindings.length - newFindings.length;
-  const scoreDelta = currentScore.numericScore - baseline.score.numericScore;
-  const newCriticalCount = newFindings.filter(
-    (f) => f.severity === "critical"
-  ).length;
-  const newHighCount = newFindings.filter(
-    (f) => f.severity === "high"
-  ).length;
-  const isRegression = newFindings.length > 0 || scoreDelta < 0;
-  return {
-    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    baselineTimestamp: baseline.timestamp,
-    newFindings,
-    resolvedFindings,
-    unchangedCount,
-    scoreDelta,
-    baselineScore: baseline.score.numericScore,
-    currentScore: currentScore.numericScore,
-    isRegression,
-    newCriticalCount,
-    newHighCount
-  };
-}
-function evaluateGate(comparison, config = DEFAULT_GATE_CONFIG) {
-  const reasons = [];
-  if (config.failOnNewCritical && comparison.newCriticalCount > 0) {
-    reasons.push(
-      `${comparison.newCriticalCount} new critical finding(s) introduced`
-    );
-  }
-  if (config.failOnNewHigh && comparison.newHighCount > 0) {
-    reasons.push(
-      `${comparison.newHighCount} new high finding(s) introduced`
-    );
-  }
-  if (comparison.newFindings.length > config.maxNewFindings) {
-    reasons.push(
-      `${comparison.newFindings.length} new finding(s) exceed threshold of ${config.maxNewFindings}`
-    );
-  }
-  if (comparison.scoreDelta < -config.maxScoreDrop) {
-    reasons.push(
-      `Score dropped by ${Math.abs(comparison.scoreDelta)} points (max allowed: ${config.maxScoreDrop})`
-    );
-  }
-  return {
-    passed: reasons.length === 0,
-    reasons,
-    comparison
-  };
-}
-function renderComparison(comparison) {
-  const lines = [];
-  const divider = "\u2500".repeat(60);
-  lines.push("");
-  lines.push(`  ${divider}`);
-  lines.push("  Baseline Comparison Report");
-  lines.push(`  ${divider}`);
-  lines.push("");
-  const direction = comparison.scoreDelta > 0 ? "+" : "";
-  const label = comparison.scoreDelta > 0 ? "IMPROVED" : comparison.scoreDelta < 0 ? "REGRESSED" : "UNCHANGED";
-  lines.push(
-    `  Score: ${comparison.baselineScore} \u2192 ${comparison.currentScore} (${direction}${comparison.scoreDelta}) [${label}]`
-  );
-  lines.push(
-    `  Baseline from: ${comparison.baselineTimestamp}`
-  );
-  lines.push("");
-  if (comparison.newFindings.length > 0) {
-    lines.push(`  NEW FINDINGS (${comparison.newFindings.length}):`);
-    for (const f of comparison.newFindings) {
-      lines.push(`    [${f.severity.toUpperCase().padEnd(8)}] ${f.title}`);
-      lines.push(`               ${f.file}`);
-    }
-    lines.push("");
-  }
-  if (comparison.resolvedFindings.length > 0) {
-    lines.push(`  RESOLVED FINDINGS (${comparison.resolvedFindings.length}):`);
-    for (const f of comparison.resolvedFindings) {
-      lines.push(`    [RESOLVED] ${f.title}`);
-    }
-    lines.push("");
-  }
-  lines.push(`  Unchanged: ${comparison.unchangedCount} finding(s)`);
-  lines.push(`  ${divider}`);
-  lines.push("");
-  return lines.join("\n");
-}
-function renderGateResult(result) {
-  const lines = [];
-  if (result.passed) {
-    lines.push("  Gate: PASSED \u2014 No regressions detected.");
-  } else {
-    lines.push("  Gate: FAILED \u2014 Security regressions detected:");
-    for (const reason of result.reasons) {
-      lines.push(`    - ${reason}`);
-    }
-  }
-  lines.push("");
-  return lines.join("\n");
-}
-var init_compare = __esm({
-  "src/baseline/compare.ts"() {
-    "use strict";
-    init_types();
-  }
-});
-
-// src/baseline/index.ts
-var baseline_exports = {};
-__export(baseline_exports, {
-  DEFAULT_GATE_CONFIG: () => DEFAULT_GATE_CONFIG,
-  compareBaseline: () => compareBaseline,
-  evaluateGate: () => evaluateGate,
-  fingerprintFinding: () => fingerprintFinding2,
-  loadBaseline: () => loadBaseline,
-  renderComparison: () => renderComparison,
-  renderGateResult: () => renderGateResult,
-  saveBaseline: () => saveBaseline
-});
-var init_baseline = __esm({
-  "src/baseline/index.ts"() {
-    "use strict";
-    init_compare();
-    init_types();
-  }
-});
-
 // src/policy/types.ts
 import { z as z2 } from "zod";
 var SeveritySchema, PolicyPackSchema, PolicyExceptionSchema, OrgPolicySchema;
-var init_types2 = __esm({
+var init_types = __esm({
   "src/policy/types.ts"() {
     "use strict";
     SeveritySchema = z2.enum(["critical", "high", "medium", "low", "info"]);
@@ -11410,13 +11214,13 @@ var init_types2 = __esm({
 });
 
 // src/policy/evaluate.ts
-import { readFileSync as readFileSync7, existsSync as existsSync9 } from "fs";
+import { readFileSync as readFileSync6, existsSync as existsSync8 } from "fs";
 function loadPolicy2(policyPath) {
-  if (!existsSync9(policyPath)) {
+  if (!existsSync8(policyPath)) {
     return { success: false, error: `Policy file not found: ${policyPath}` };
   }
   try {
-    const raw = readFileSync7(policyPath, "utf-8");
+    const raw = readFileSync6(policyPath, "utf-8");
     const parsed = JSON.parse(raw);
     return { success: true, policy: OrgPolicySchema.parse(parsed) };
   } catch (error) {
@@ -11741,7 +11545,7 @@ var SEVERITY_ORDER2;
 var init_evaluate = __esm({
   "src/policy/evaluate.ts"() {
     "use strict";
-    init_types2();
+    init_types();
     SEVERITY_ORDER2 = {
       critical: 0,
       high: 1,
@@ -11767,6 +11571,202 @@ var init_policy = __esm({
   "src/policy/index.ts"() {
     "use strict";
     init_evaluate();
+    init_types();
+  }
+});
+
+// src/baseline/types.ts
+var DEFAULT_GATE_CONFIG;
+var init_types2 = __esm({
+  "src/baseline/types.ts"() {
+    "use strict";
+    DEFAULT_GATE_CONFIG = {
+      maxNewFindings: 0,
+      maxScoreDrop: 5,
+      failOnNewCritical: true,
+      failOnNewHigh: true
+    };
+  }
+});
+
+// src/baseline/compare.ts
+import { readFileSync as readFileSync7, writeFileSync as writeFileSync4, existsSync as existsSync9 } from "fs";
+import { dirname as dirname4 } from "path";
+import { mkdirSync as mkdirSync4 } from "fs";
+function fingerprintFinding2(finding) {
+  return `${finding.id}::${finding.file}::${finding.evidence ?? ""}`;
+}
+function saveBaseline(findings, score, outputPath) {
+  const serialized = {
+    version: 1,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    score,
+    findings: findings.map((f) => ({
+      id: f.id,
+      severity: f.severity,
+      category: f.category,
+      title: f.title,
+      file: f.file,
+      evidence: f.evidence,
+      fingerprint: fingerprintFinding2(f)
+    }))
+  };
+  const dir = dirname4(outputPath);
+  if (!existsSync9(dir)) {
+    mkdirSync4(dir, { recursive: true });
+  }
+  writeFileSync4(outputPath, JSON.stringify(serialized, null, 2));
+}
+function loadBaseline(baselinePath) {
+  if (!existsSync9(baselinePath)) return null;
+  try {
+    const raw = readFileSync7(baselinePath, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (parsed.version !== 1 || !Array.isArray(parsed.findings)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+function compareBaseline(baseline, currentFindings, currentScore) {
+  const baselineFingerprints = new Set(
+    baseline.findings.map((f) => f.fingerprint)
+  );
+  const currentFingerprints = new Set(
+    currentFindings.map(fingerprintFinding2)
+  );
+  const newFindings = currentFindings.filter(
+    (f) => !baselineFingerprints.has(fingerprintFinding2(f))
+  );
+  const resolvedFindings = baseline.findings.filter(
+    (f) => !currentFingerprints.has(f.fingerprint)
+  );
+  const unchangedCount = currentFindings.length - newFindings.length;
+  const scoreDelta = currentScore.numericScore - baseline.score.numericScore;
+  const newCriticalCount = newFindings.filter(
+    (f) => f.severity === "critical"
+  ).length;
+  const newHighCount = newFindings.filter(
+    (f) => f.severity === "high"
+  ).length;
+  const isRegression = newFindings.length > 0 || scoreDelta < 0;
+  return {
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    baselineTimestamp: baseline.timestamp,
+    newFindings,
+    resolvedFindings,
+    unchangedCount,
+    scoreDelta,
+    baselineScore: baseline.score.numericScore,
+    currentScore: currentScore.numericScore,
+    isRegression,
+    newCriticalCount,
+    newHighCount
+  };
+}
+function evaluateGate(comparison, config = DEFAULT_GATE_CONFIG) {
+  const reasons = [];
+  if (config.failOnNewCritical && comparison.newCriticalCount > 0) {
+    reasons.push(
+      `${comparison.newCriticalCount} new critical finding(s) introduced`
+    );
+  }
+  if (config.failOnNewHigh && comparison.newHighCount > 0) {
+    reasons.push(
+      `${comparison.newHighCount} new high finding(s) introduced`
+    );
+  }
+  if (comparison.newFindings.length > config.maxNewFindings) {
+    reasons.push(
+      `${comparison.newFindings.length} new finding(s) exceed threshold of ${config.maxNewFindings}`
+    );
+  }
+  if (comparison.scoreDelta < -config.maxScoreDrop) {
+    reasons.push(
+      `Score dropped by ${Math.abs(comparison.scoreDelta)} points (max allowed: ${config.maxScoreDrop})`
+    );
+  }
+  return {
+    passed: reasons.length === 0,
+    reasons,
+    comparison
+  };
+}
+function renderComparison(comparison) {
+  const lines = [];
+  const divider = "\u2500".repeat(60);
+  lines.push("");
+  lines.push(`  ${divider}`);
+  lines.push("  Baseline Comparison Report");
+  lines.push(`  ${divider}`);
+  lines.push("");
+  const direction = comparison.scoreDelta > 0 ? "+" : "";
+  const label = comparison.scoreDelta > 0 ? "IMPROVED" : comparison.scoreDelta < 0 ? "REGRESSED" : "UNCHANGED";
+  lines.push(
+    `  Score: ${comparison.baselineScore} \u2192 ${comparison.currentScore} (${direction}${comparison.scoreDelta}) [${label}]`
+  );
+  lines.push(
+    `  Baseline from: ${comparison.baselineTimestamp}`
+  );
+  lines.push("");
+  if (comparison.newFindings.length > 0) {
+    lines.push(`  NEW FINDINGS (${comparison.newFindings.length}):`);
+    for (const f of comparison.newFindings) {
+      lines.push(`    [${f.severity.toUpperCase().padEnd(8)}] ${f.title}`);
+      lines.push(`               ${f.file}`);
+    }
+    lines.push("");
+  }
+  if (comparison.resolvedFindings.length > 0) {
+    lines.push(`  RESOLVED FINDINGS (${comparison.resolvedFindings.length}):`);
+    for (const f of comparison.resolvedFindings) {
+      lines.push(`    [RESOLVED] ${f.title}`);
+    }
+    lines.push("");
+  }
+  lines.push(`  Unchanged: ${comparison.unchangedCount} finding(s)`);
+  lines.push(`  ${divider}`);
+  lines.push("");
+  return lines.join("\n");
+}
+function renderGateResult(result) {
+  const lines = [];
+  if (result.passed) {
+    lines.push("  Gate: PASSED \u2014 No regressions detected.");
+  } else {
+    lines.push("  Gate: FAILED \u2014 Security regressions detected:");
+    for (const reason of result.reasons) {
+      lines.push(`    - ${reason}`);
+    }
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+var init_compare = __esm({
+  "src/baseline/compare.ts"() {
+    "use strict";
+    init_types2();
+  }
+});
+
+// src/baseline/index.ts
+var baseline_exports = {};
+__export(baseline_exports, {
+  DEFAULT_GATE_CONFIG: () => DEFAULT_GATE_CONFIG,
+  compareBaseline: () => compareBaseline,
+  evaluateGate: () => evaluateGate,
+  fingerprintFinding: () => fingerprintFinding2,
+  loadBaseline: () => loadBaseline,
+  renderComparison: () => renderComparison,
+  renderGateResult: () => renderGateResult,
+  saveBaseline: () => saveBaseline
+});
+var init_baseline = __esm({
+  "src/baseline/index.ts"() {
+    "use strict";
+    init_compare();
     init_types2();
   }
 });
@@ -13299,9 +13299,13 @@ function inlineStyles() {
 
 // src/reporter/sarif.ts
 var SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json";
-function renderSarifReport(report) {
-  const rules = buildRules(report.findings);
+function renderSarifReport(report, options = {}) {
+  const rules = [
+    ...buildFindingRules(report.findings),
+    ...buildPolicyRules(options.policyEvaluation)
+  ];
   const ruleIndexes = new Map(rules.map((rule, index) => [rule.id, index]));
+  const policyUri = options.policyUri ?? ".agentshield/policy.json";
   return JSON.stringify(
     {
       version: "2.1.0",
@@ -13330,11 +13334,24 @@ function renderSarifReport(report) {
           properties: {
             score: report.score.numericScore,
             grade: report.score.grade,
-            filesScanned: report.summary.filesScanned
+            filesScanned: report.summary.filesScanned,
+            ...options.policyEvaluation ? {
+              policyStatus: options.policyEvaluation.passed ? "compliant" : "non-compliant",
+              policyViolations: options.policyEvaluation.violations.length,
+              policyName: options.policyEvaluation.policyName,
+              policyPack: options.policyEvaluation.policyPack
+            } : {}
           },
-          results: report.findings.map(
-            (finding) => renderSarifResult(finding, ruleIndexes.get(finding.id) ?? 0)
-          )
+          results: [
+            ...report.findings.map(
+              (finding) => renderFindingResult(finding, ruleIndexes.get(finding.id) ?? 0)
+            ),
+            ...renderPolicyResults(
+              options.policyEvaluation,
+              ruleIndexes,
+              policyUri
+            )
+          ]
         }
       ]
     },
@@ -13342,7 +13359,7 @@ function renderSarifReport(report) {
     2
   );
 }
-function buildRules(findings) {
+function buildFindingRules(findings) {
   const rules = /* @__PURE__ */ new Map();
   for (const finding of findings) {
     if (rules.has(finding.id)) continue;
@@ -13368,7 +13385,47 @@ Recommended fix: ${finding.fix.description}` } : { text: finding.description },
   }
   return [...rules.values()];
 }
-function renderSarifResult(finding, ruleIndex) {
+function buildPolicyRules(evaluation) {
+  if (!evaluation) return [];
+  const rules = /* @__PURE__ */ new Map();
+  for (const violation of evaluation.violations) {
+    const ruleId = policyRuleId(violation);
+    if (rules.has(ruleId)) continue;
+    rules.set(ruleId, {
+      id: ruleId,
+      name: `Organization policy: ${violation.rule}`,
+      shortDescription: {
+        text: `Organization policy: ${violation.rule}`
+      },
+      fullDescription: {
+        text: violation.description
+      },
+      help: {
+        text: [
+          violation.description,
+          "",
+          `Expected: ${violation.expected}`,
+          `Actual: ${violation.actual}`
+        ].join("\n")
+      },
+      defaultConfiguration: {
+        level: severityToLevel(violation.severity)
+      },
+      properties: {
+        category: "organization-policy",
+        severity: violation.severity,
+        "security-severity": severityToSecurityScore(violation.severity),
+        tags: ["security", "agent-config", "organization-policy"],
+        precision: "high",
+        policyName: evaluation.policyName,
+        policyPack: evaluation.policyPack,
+        owners: evaluation.owners ?? []
+      }
+    });
+  }
+  return [...rules.values()];
+}
+function renderFindingResult(finding, ruleIndex) {
   return {
     ruleId: finding.id,
     ruleIndex,
@@ -13399,6 +13456,42 @@ function renderSarifResult(finding, ruleIndex) {
       fix: finding.fix?.description
     }
   };
+}
+function renderPolicyResults(evaluation, ruleIndexes, policyUri) {
+  if (!evaluation) return [];
+  return evaluation.violations.map((violation) => {
+    const ruleId = policyRuleId(violation);
+    return {
+      ruleId,
+      ruleIndex: ruleIndexes.get(ruleId) ?? 0,
+      level: severityToLevel(violation.severity),
+      message: {
+        text: violation.description
+      },
+      locations: [
+        {
+          physicalLocation: {
+            artifactLocation: {
+              uri: normalizeUri(policyUri)
+            }
+          }
+        }
+      ],
+      properties: {
+        source: "organization-policy",
+        policyName: evaluation.policyName,
+        policyPack: evaluation.policyPack,
+        owners: evaluation.owners ?? [],
+        rule: violation.rule,
+        severity: violation.severity,
+        expected: violation.expected,
+        actual: violation.actual
+      }
+    };
+  });
+}
+function policyRuleId(violation) {
+  return `agentshield-policy/${violation.rule}`;
 }
 function severityToLevel(severity) {
   switch (severity) {
@@ -15948,6 +16041,54 @@ program.command("scan").description("Scan a Claude Code configuration directory 
     message: `Static analysis complete: ${report.summary.totalFindings} findings`,
     data: { grade: report.score.grade, score: report.score.numericScore }
   });
+  let policyEvaluation = null;
+  let policyExitCode = 0;
+  const machineReportToStdout = !options.output && (options.format === "json" || options.format === "sarif");
+  const writePolicyOutput = (message) => {
+    if (machineReportToStdout) {
+      console.error(message);
+    } else {
+      console.log(message);
+    }
+  };
+  if (options.policy) {
+    logger.log({ level: "info", phase: "policy", message: "Validating against organization policy" });
+    try {
+      const { loadPolicy: loadOrgPolicy, evaluatePolicy: evaluatePolicy2, renderPolicyEvaluation: renderPolicyEvaluation2 } = await Promise.resolve().then(() => (init_policy(), policy_exports));
+      const policyResult = loadOrgPolicy(resolve8(options.policy));
+      if (!policyResult.success) {
+        console.error(`
+  Error: ${policyResult.error}
+`);
+        logger.log({
+          level: "error",
+          phase: "policy",
+          message: `Failed to load policy: ${policyResult.error}`
+        });
+        process.exit(4);
+      }
+      policyEvaluation = evaluatePolicy2(
+        policyResult.policy,
+        filteredResult.findings,
+        report.score,
+        result.target.files
+      );
+      writePolicyOutput(renderPolicyEvaluation2(policyEvaluation));
+      logger.log({
+        level: policyEvaluation.passed ? "info" : "warn",
+        phase: "policy",
+        message: `Policy "${policyEvaluation.policyName}": ${policyEvaluation.passed ? "COMPLIANT" : `NON-COMPLIANT (${policyEvaluation.violations.length} violations)`}`
+      });
+      if (!policyEvaluation.passed) {
+        policyExitCode = 4;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`  Policy evaluation failed: ${message}`);
+      logger.log({ level: "error", phase: "policy", message: `Failed: ${message}` });
+      process.exit(4);
+    }
+  }
   let renderedReport;
   switch (options.format) {
     case "json":
@@ -15960,7 +16101,10 @@ program.command("scan").description("Scan a Claude Code configuration directory 
       renderedReport = renderHtmlReport(report);
       break;
     case "sarif":
-      renderedReport = renderSarifReport(report);
+      renderedReport = renderSarifReport(report, {
+        policyEvaluation: policyEvaluation ?? void 0,
+        policyUri: options.policy
+      });
       break;
     default:
       renderedReport = renderTerminalReport(report);
@@ -15999,43 +16143,8 @@ program.command("scan").description("Scan a Claude Code configuration directory 
       }
     }
   }
-  if (options.policy) {
-    logger.log({ level: "info", phase: "policy", message: "Validating against organization policy" });
-    try {
-      const { loadPolicy: loadOrgPolicy, evaluatePolicy: evaluatePolicy2, renderPolicyEvaluation: renderPolicyEvaluation2 } = await Promise.resolve().then(() => (init_policy(), policy_exports));
-      const policyResult = loadOrgPolicy(resolve8(options.policy));
-      if (!policyResult.success) {
-        console.error(`
-  Error: ${policyResult.error}
-`);
-        logger.log({
-          level: "error",
-          phase: "policy",
-          message: `Failed to load policy: ${policyResult.error}`
-        });
-        process.exit(4);
-      }
-      const evaluation = evaluatePolicy2(
-        policyResult.policy,
-        filteredResult.findings,
-        report.score,
-        result.target.files
-      );
-      console.log(renderPolicyEvaluation2(evaluation));
-      logger.log({
-        level: evaluation.passed ? "info" : "warn",
-        phase: "policy",
-        message: `Policy "${evaluation.policyName}": ${evaluation.passed ? "COMPLIANT" : `NON-COMPLIANT (${evaluation.violations.length} violations)`}`
-      });
-      if (!evaluation.passed) {
-        process.exit(4);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`  Policy evaluation failed: ${message}`);
-      logger.log({ level: "error", phase: "policy", message: `Failed: ${message}` });
-      process.exit(4);
-    }
+  if (policyExitCode > 0) {
+    process.exit(policyExitCode);
   }
   if (options.fix) {
     logger.log({ level: "info", phase: "fix", message: "Applying auto-fixes" });

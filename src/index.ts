@@ -27,6 +27,7 @@ import type {
   ScanLogEntry,
   DeepScanResult,
 } from "./types.js";
+import type { PolicyEvaluation } from "./policy/index.js";
 
 // ─── Dynamic Module Loaders ───────────────────────────────────
 // These modules are being built in parallel by other agents.
@@ -276,6 +277,58 @@ program
       data: { grade: report.score.grade, score: report.score.numericScore },
     });
 
+    let policyEvaluation: PolicyEvaluation | null = null;
+    let policyExitCode = 0;
+    const machineReportToStdout =
+      !options.output && (options.format === "json" || options.format === "sarif");
+    const writePolicyOutput = (message: string): void => {
+      if (machineReportToStdout) {
+        console.error(message);
+      } else {
+        console.log(message);
+      }
+    };
+
+    // ── Phase 1c: Organization policy validation ──────────
+    if (options.policy) {
+      logger.log({ level: "info", phase: "policy", message: "Validating against organization policy" });
+      try {
+        const { loadPolicy: loadOrgPolicy, evaluatePolicy, renderPolicyEvaluation } =
+          await import("./policy/index.js");
+        const policyResult = loadOrgPolicy(resolve(options.policy));
+        if (!policyResult.success) {
+          console.error(`\n  Error: ${policyResult.error}\n`);
+          logger.log({
+            level: "error",
+            phase: "policy",
+            message: `Failed to load policy: ${policyResult.error}`,
+          });
+          process.exit(4);
+        }
+
+        policyEvaluation = evaluatePolicy(
+          policyResult.policy,
+          filteredResult.findings,
+          report.score,
+          result.target.files
+        );
+        writePolicyOutput(renderPolicyEvaluation(policyEvaluation));
+        logger.log({
+          level: policyEvaluation.passed ? "info" : "warn",
+          phase: "policy",
+          message: `Policy "${policyEvaluation.policyName}": ${policyEvaluation.passed ? "COMPLIANT" : `NON-COMPLIANT (${policyEvaluation.violations.length} violations)`}`,
+        });
+        if (!policyEvaluation.passed) {
+          policyExitCode = 4;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`  Policy evaluation failed: ${message}`);
+        logger.log({ level: "error", phase: "policy", message: `Failed: ${message}` });
+        process.exit(4);
+      }
+    }
+
     // Output static scan
     let renderedReport: string;
     switch (options.format) {
@@ -289,7 +342,10 @@ program
         renderedReport = renderHtmlReport(report);
         break;
       case "sarif":
-        renderedReport = renderSarifReport(report);
+        renderedReport = renderSarifReport(report, {
+          policyEvaluation: policyEvaluation ?? undefined,
+          policyUri: options.policy,
+        });
         break;
       default:
         renderedReport = renderTerminalReport(report);
@@ -330,44 +386,8 @@ program
       }
     }
 
-    // ── Phase 1c: Organization policy validation ──────────
-    if (options.policy) {
-      logger.log({ level: "info", phase: "policy", message: "Validating against organization policy" });
-      try {
-        const { loadPolicy: loadOrgPolicy, evaluatePolicy, renderPolicyEvaluation } =
-          await import("./policy/index.js");
-        const policyResult = loadOrgPolicy(resolve(options.policy));
-        if (!policyResult.success) {
-          console.error(`\n  Error: ${policyResult.error}\n`);
-          logger.log({
-            level: "error",
-            phase: "policy",
-            message: `Failed to load policy: ${policyResult.error}`,
-          });
-          process.exit(4);
-        }
-
-        const evaluation = evaluatePolicy(
-          policyResult.policy,
-          filteredResult.findings,
-          report.score,
-          result.target.files
-        );
-        console.log(renderPolicyEvaluation(evaluation));
-        logger.log({
-          level: evaluation.passed ? "info" : "warn",
-          phase: "policy",
-          message: `Policy "${evaluation.policyName}": ${evaluation.passed ? "COMPLIANT" : `NON-COMPLIANT (${evaluation.violations.length} violations)`}`,
-        });
-        if (!evaluation.passed) {
-          process.exit(4);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`  Policy evaluation failed: ${message}`);
-        logger.log({ level: "error", phase: "policy", message: `Failed: ${message}` });
-        process.exit(4);
-      }
+    if (policyExitCode > 0) {
+      process.exit(policyExitCode);
     }
 
     // ── Phase 2: Auto-fix (if enabled) ──────────────────────

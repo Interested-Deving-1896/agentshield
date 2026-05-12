@@ -18,6 +18,7 @@ import {
   renderPolicyJobSummary,
   statusForPolicyEvaluation,
 } from "./action-policy.js";
+import type { PolicyEvaluation } from "./policy/index.js";
 import type { Finding, Severity } from "./types.js";
 
 // ─── GitHub Actions Helpers ──────────────────────────────────
@@ -145,10 +146,70 @@ async function run(): Promise<void> {
   setOutput("policy-status", "not-run");
   setOutput("policy-violations", "0");
 
+  let policyEvaluation: PolicyEvaluation | null = null;
+  let shouldFailOnPolicy = false;
+
+  if (policyPath) {
+    const { loadPolicy, evaluatePolicy, renderPolicyEvaluation } = await import(
+      "./policy/index.js"
+    );
+    const resolvedPolicyPath = resolve(workspace, policyPath);
+    const policyResult = loadPolicy(resolvedPolicyPath);
+
+    if (!policyResult.success) {
+      setOutput("policy-status", "error");
+      console.log(
+        `::error::AgentShield policy load failed: ${escapeAnnotation(policyResult.error)}`
+      );
+      writeJobSummary([
+        "",
+        "",
+        "## AgentShield Organization Policy",
+        "",
+        "- Status: error",
+        `- Error: ${policyResult.error}`,
+        "",
+      ].join("\n"));
+      if (failOnPolicy) {
+        shouldFailOnPolicy = true;
+      }
+    } else {
+      policyEvaluation = evaluatePolicy(
+        policyResult.policy,
+        filteredResult.findings,
+        report.score,
+        result.target.files
+      );
+      const policyStatus = statusForPolicyEvaluation(policyEvaluation);
+      setOutput("policy-status", policyStatus);
+      setOutput("policy-violations", String(policyEvaluation.violations.length));
+      writeJobSummary(renderPolicyJobSummary(policyEvaluation));
+      console.log(renderPolicyEvaluation(policyEvaluation));
+
+      if (!policyEvaluation.passed) {
+        for (const violation of policyEvaluation.violations) {
+          const message = escapeAnnotation(violation.description);
+          console.log(
+            `::error::AgentShield policy violation ${violation.rule}: ${message}`
+          );
+        }
+        if (failOnPolicy) {
+          shouldFailOnPolicy = true;
+        }
+      }
+    }
+  }
+
   if (format === "sarif") {
     const sarifPath = resolve(workspace, sarifOutput);
     mkdirSync(dirname(sarifPath), { recursive: true });
-    writeFileSync(sarifPath, renderSarifReport(report));
+    writeFileSync(
+      sarifPath,
+      renderSarifReport(report, {
+        policyEvaluation: policyEvaluation ?? undefined,
+        policyUri: policyPath || undefined,
+      })
+    );
     setOutput("sarif-path", sarifPath);
     console.log(`SARIF written to: ${sarifPath}`);
   }
@@ -208,57 +269,9 @@ async function run(): Promise<void> {
     }
   }
 
-  if (policyPath) {
-    const { loadPolicy, evaluatePolicy, renderPolicyEvaluation } = await import(
-      "./policy/index.js"
-    );
-    const resolvedPolicyPath = resolve(workspace, policyPath);
-    const policyResult = loadPolicy(resolvedPolicyPath);
-
-    if (!policyResult.success) {
-      setOutput("policy-status", "error");
-      console.log(
-        `::error::AgentShield policy load failed: ${escapeAnnotation(policyResult.error)}`
-      );
-      writeJobSummary([
-        "",
-        "",
-        "## AgentShield Organization Policy",
-        "",
-        "- Status: error",
-        `- Error: ${policyResult.error}`,
-        "",
-      ].join("\n"));
-      if (failOnPolicy) {
-        process.exitCode = 1;
-        return;
-      }
-    } else {
-      const evaluation = evaluatePolicy(
-        policyResult.policy,
-        filteredResult.findings,
-        report.score,
-        result.target.files
-      );
-      const policyStatus = statusForPolicyEvaluation(evaluation);
-      setOutput("policy-status", policyStatus);
-      setOutput("policy-violations", String(evaluation.violations.length));
-      writeJobSummary(renderPolicyJobSummary(evaluation));
-      console.log(renderPolicyEvaluation(evaluation));
-
-      if (!evaluation.passed) {
-        for (const violation of evaluation.violations) {
-          const message = escapeAnnotation(violation.description);
-          console.log(
-            `::error::AgentShield policy violation ${violation.rule}: ${message}`
-          );
-        }
-        if (failOnPolicy) {
-          process.exitCode = 1;
-          return;
-        }
-      }
-    }
+  if (shouldFailOnPolicy) {
+    process.exitCode = 1;
+    return;
   }
 
   // Fail if requested and findings exist

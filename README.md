@@ -474,7 +474,7 @@ Detailed request/response and schema notes live in [`API.md`](./API.md).
 
 **Outputs:** `score` (0–100), `grade` (A–F), `total-findings`, `critical-count`, `sarif-path`, `policy-status`, `policy-violations`
 
-The action writes a markdown job summary and emits GitHub annotations inline on affected files. When `format: sarif` is set, it also writes a SARIF 2.1.0 report that can be uploaded to GitHub code scanning with `github/codeql-action/upload-sarif`. When `policy` is set, the action appends the organization policy result to the job summary, emits policy violation annotations, and fails by default unless `fail-on-policy: "false"` is set.
+The action writes a markdown job summary and emits GitHub annotations inline on affected files. When `format: sarif` is set, it also writes a SARIF 2.1.0 report that can be uploaded to GitHub code scanning with `github/codeql-action/upload-sarif`. When `policy` is set, the SARIF report includes organization-policy violations as `agentshield-policy/*` code-scanning results, appends the organization policy result to the job summary, emits policy violation annotations, and fails by default unless `fail-on-policy: "false"` is set.
 
 ## CLI Reference
 
