@@ -64,6 +64,65 @@ describe("renderHtmlReport", () => {
     expect(html).toContain("Agents");
   });
 
+  it("renders an executive summary for clean reports", () => {
+    const html = renderHtmlReport(makeReport());
+    expect(html).toContain("Executive Summary");
+    expect(html).toContain("Risk Posture");
+    expect(html).toContain("Ready for standard rollout");
+    expect(html).toContain("No critical or high-severity findings were detected.");
+  });
+
+  it("renders executive priorities and category exposure for risky reports", () => {
+    const html = renderHtmlReport(makeReport({
+      findings: [
+        {
+          id: "SEC-001",
+          severity: "critical",
+          category: "secrets",
+          title: "Leaked API key",
+          description: "Found exposed key",
+          file: "CLAUDE.md",
+        },
+        {
+          id: "HOOK-001",
+          severity: "high",
+          category: "hooks",
+          title: "Networked hook",
+          description: "Hook reaches the network",
+          file: "settings.json",
+        },
+        {
+          id: "HOOK-002",
+          severity: "medium",
+          category: "hooks",
+          title: "Broad hook",
+          description: "Hook has broad trigger scope",
+          file: "settings.json",
+        },
+      ],
+      summary: {
+        totalFindings: 3,
+        critical: 1,
+        high: 1,
+        medium: 1,
+        low: 0,
+        info: 0,
+        filesScanned: 3,
+        autoFixable: 0,
+      },
+    }));
+
+    expect(html).toContain("Immediate remediation required");
+    expect(html).toContain("Executive Priorities");
+    expect(html).toContain("1 critical and 1 high-severity findings require owner review.");
+    expect(html).toContain("Leaked API key");
+    expect(html).toContain("Networked hook");
+    expect(html).toContain("Category Exposure");
+    expect(html).toContain("hooks");
+    expect(html).toContain("2 findings");
+    expect(html).toContain("secrets");
+  });
+
   it("shows no-findings message when empty", () => {
     const html = renderHtmlReport(makeReport());
     expect(html).toContain("No security issues found");

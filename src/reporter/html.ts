@@ -43,6 +43,8 @@ export function renderHtmlReport(report: SecurityReport): string {
       </div>
     </header>
 
+    ${renderExecutiveSummary(report)}
+
     <!-- Summary Stats -->
     <section class="section">
       <h2 class="section-title">Summary</h2>
@@ -114,6 +116,144 @@ export function renderHtmlReport(report: SecurityReport): string {
   </div>
 </body>
 </html>`;
+}
+
+// ─── Executive Summary ───────────────────────────────────────
+
+interface ExecutivePosture {
+  readonly label: string;
+  readonly detail: string;
+  readonly color: string;
+}
+
+function renderExecutiveSummary(report: SecurityReport): string {
+  const posture = executivePosture(report);
+  const priorities = executivePriorityFindings(report.findings);
+  const priorityItems =
+    priorities.length === 0
+      ? '<li class="priority-item muted">No executive action items.</li>'
+      : priorities
+        .map((finding) => {
+          const location = finding.line ? `${finding.file}:${finding.line}` : finding.file;
+          return `<li class="priority-item">
+            <span class="priority-severity" style="background-color: ${severityColor(finding.severity)};">${finding.severity.toUpperCase()}</span>
+            <span>
+              <strong>${escapeHtml(finding.title)}</strong>
+              <span class="priority-meta">${escapeHtml(location)} - ${escapeHtml(finding.category)}</span>
+            </span>
+          </li>`;
+        })
+        .join("");
+
+  return `
+    <!-- Executive Summary -->
+    <section class="section executive-summary">
+      <h2 class="section-title">Executive Summary</h2>
+      <div class="executive-grid">
+        <div class="executive-card posture-card" style="border-color: ${posture.color};">
+          <span class="executive-label">Risk Posture</span>
+          <strong class="posture-title" style="color: ${posture.color};">${escapeHtml(posture.label)}</strong>
+          <p class="executive-copy">${escapeHtml(posture.detail)}</p>
+        </div>
+        <div class="executive-card">
+          <span class="executive-label">Executive Priorities</span>
+          <ul class="priority-list">${priorityItems}</ul>
+        </div>
+        <div class="executive-card">
+          <span class="executive-label">Category Exposure</span>
+          ${renderCategoryExposure(report.findings)}
+        </div>
+      </div>
+    </section>`;
+}
+
+function executivePosture(report: SecurityReport): ExecutivePosture {
+  const { summary } = report;
+
+  if (summary.critical > 0) {
+    return {
+      label: "Immediate remediation required",
+      detail: formatOwnerReviewDetail(summary.critical, summary.high),
+      color: "#f85149",
+    };
+  }
+
+  if (summary.high > 0) {
+    return {
+      label: "High-risk changes need review",
+      detail: `${summary.high} high-severity findings require owner review before rollout.`,
+      color: "#d29922",
+    };
+  }
+
+  if (summary.medium > 0) {
+    return {
+      label: "Monitor before broad rollout",
+      detail: `${summary.medium} medium-severity findings should be reviewed before broad rollout.`,
+      color: "#388bfd",
+    };
+  }
+
+  return {
+    label: "Ready for standard rollout",
+    detail: "No critical or high-severity findings were detected.",
+    color: "#2ea043",
+  };
+}
+
+function formatOwnerReviewDetail(critical: number, high: number): string {
+  if (critical > 0 && high > 0) {
+    return `${critical} critical and ${high} high-severity findings require owner review.`;
+  }
+
+  if (critical > 0) {
+    return `${critical} critical findings require owner review.`;
+  }
+
+  return `${high} high-severity findings require owner review before rollout.`;
+}
+
+function executivePriorityFindings(findings: ReadonlyArray<Finding>): ReadonlyArray<Finding> {
+  const severityRank: Record<Severity, number> = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+    info: 4,
+  };
+
+  return findings
+    .filter((finding) => finding.severity === "critical" || finding.severity === "high")
+    .slice()
+    .sort((a, b) => severityRank[a.severity] - severityRank[b.severity])
+    .slice(0, 5);
+}
+
+function renderCategoryExposure(findings: ReadonlyArray<Finding>): string {
+  if (findings.length === 0) {
+    return '<p class="executive-copy muted">No category exposure to display.</p>';
+  }
+
+  const categoryCounts = new Map<string, number>();
+  for (const finding of findings) {
+    categoryCounts.set(finding.category, (categoryCounts.get(finding.category) ?? 0) + 1);
+  }
+
+  const rows = [...categoryCounts.entries()]
+    .sort(([leftCategory, leftCount], [rightCategory, rightCount]) => {
+      if (rightCount !== leftCount) return rightCount - leftCount;
+      return leftCategory.localeCompare(rightCategory);
+    })
+    .map(([category, count]) => {
+      const noun = count === 1 ? "finding" : "findings";
+      return `<div class="exposure-row">
+        <span class="exposure-category">${escapeHtml(category)}</span>
+        <span class="exposure-count">${count} ${noun}</span>
+      </div>`;
+    })
+    .join("");
+
+  return `<div class="exposure-grid">${rows}</div>`;
 }
 
 // ─── Grade Metadata ──────────────────────────────────────────
@@ -492,6 +632,116 @@ function inlineStyles(): string {
       border-bottom: 1px solid #21262d;
     }
 
+    /* Executive Summary */
+    .executive-summary {
+      border-color: #3d444d;
+    }
+
+    .executive-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+      gap: 12px;
+    }
+
+    .executive-card {
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .posture-card {
+      grid-row: span 2;
+    }
+
+    .executive-label {
+      display: block;
+      font-size: 12px;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .posture-title {
+      display: block;
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    .executive-copy {
+      font-size: 14px;
+      color: #8b949e;
+    }
+
+    .muted {
+      color: #8b949e;
+    }
+
+    .priority-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .priority-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 14px;
+      color: #e6edf3;
+    }
+
+    .priority-severity {
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      border-radius: 10px;
+      padding: 2px 7px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .priority-meta {
+      display: block;
+      color: #8b949e;
+      font-size: 12px;
+      margin-top: 2px;
+      overflow-wrap: anywhere;
+    }
+
+    .exposure-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .exposure-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid #21262d;
+      padding-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .exposure-row:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .exposure-category {
+      color: #e6edf3;
+      font-weight: 600;
+    }
+
+    .exposure-count {
+      color: #8b949e;
+      white-space: nowrap;
+    }
+
     /* Stats Grid */
     .stats-grid {
       display: grid;
@@ -811,6 +1061,14 @@ function inlineStyles(): string {
 
       .fix-diff {
         grid-template-columns: 1fr;
+      }
+
+      .executive-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .posture-card {
+        grid-row: auto;
       }
 
       .stats-grid {

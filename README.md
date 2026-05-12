@@ -89,7 +89,7 @@ agentshield scan --fix
 # JSON output for CI pipelines
 agentshield scan --format json
 
-# Generate an HTML security report
+# Generate an HTML executive security report
 agentshield scan --format html > report.html
 
 # Three-agent Opus 4.6 adversarial analysis (requires ANTHROPIC_API_KEY)
@@ -384,7 +384,7 @@ Requires `ANTHROPIC_API_KEY` environment variable.
 | Terminal | `--format terminal` (default) | Interactive use |
 | JSON | `--format json` | CI pipelines, programmatic access |
 | Markdown | `--format markdown` | Documentation, PRs |
-| HTML | `--format html` | Self-contained shareable report (dark theme, all CSS inlined) |
+| HTML | `--format html` | Executive report with risk posture and priorities |
 
 ### JSON Report Shape
 

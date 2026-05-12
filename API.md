@@ -61,6 +61,8 @@ function renderHtmlReport(report: SecurityReport): string;
 - reporters consume a `SecurityReport`
 - `renderJsonReport()` returns formatted JSON text
 - `renderMarkdownReport()` and `renderHtmlReport()` also expose `runtimeConfidence` when present on findings
+- `renderHtmlReport()` includes an executive summary with risk posture,
+  priority findings, and category exposure
 
 ## CLI API
 
