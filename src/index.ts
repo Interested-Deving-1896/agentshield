@@ -212,6 +212,10 @@ function emitReportOutput(output: string, outputPath: string | undefined): void 
   console.log(`Report written to: ${resolvedOutput}`);
 }
 
+function collectOption(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
 program
   .command("scan")
   .description("Scan a Claude Code configuration directory for security issues")
@@ -765,12 +769,24 @@ policyCmd
   .command("init")
   .description("Generate an example organization policy file")
   .option("-o, --output <path>", "Output path", ".agentshield/policy.json")
+  .option("--pack <pack>", "Policy pack preset: oss, team, enterprise, regulated, high-risk-hooks-mcp, ci-enforcement", "enterprise")
+  .option("--owner <owner>", "Policy owner identifier; repeat for multiple owners", collectOption, [])
+  .option("--name <name>", "Policy display name")
   .action(async (options) => {
-    const { generateExamplePolicy } = await import("./policy/index.js");
+    const { generateExamplePolicy, listPolicyPacks, PolicyPackSchema } = await import("./policy/index.js");
     const outputPath = resolve(options.output);
+    const packResult = PolicyPackSchema.safeParse(options.pack);
 
     if (existsSync(outputPath)) {
       console.error(`\n  Error: Policy file already exists at ${outputPath}\n`);
+      process.exit(1);
+    }
+
+    if (!packResult.success) {
+      const packs = listPolicyPacks()
+        .map((pack) => pack.id)
+        .join(", ");
+      console.error(`\n  Error: Unknown policy pack "${options.pack}". Valid packs: ${packs}\n`);
       process.exit(1);
     }
 
@@ -779,8 +795,12 @@ policyCmd
       mkdirSync(dir, { recursive: true });
     }
 
-    writeFileSync(outputPath, generateExamplePolicy());
+    writeFileSync(outputPath, generateExamplePolicy(packResult.data, {
+      name: options.name,
+      owners: options.owner,
+    }));
     console.log(`\n  Example policy written to: ${outputPath}`);
+    console.log(`  Policy pack: ${packResult.data}`);
     console.log(`  Edit the file to match your organization's requirements.`);
     console.log(`  Then run: agentshield scan --policy ${options.output}\n`);
   });

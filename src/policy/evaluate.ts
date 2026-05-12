@@ -1,9 +1,11 @@
 import { readFileSync, existsSync } from "node:fs";
 import { OrgPolicySchema } from "./types.js";
+import { generatePolicyPack } from "./presets.js";
 import type {
   AppliedPolicyException,
   OrgPolicy,
   PolicyException,
+  PolicyPack,
   PolicyViolation,
   PolicyEvaluation,
 } from "./types.js";
@@ -436,13 +438,19 @@ export function renderPolicyEvaluation(evaluation: PolicyEvaluation): string {
 /**
  * Generate an example policy file.
  */
-export function generateExamplePolicy(): string {
+export function generateExamplePolicy(
+  pack: PolicyPack = "enterprise",
+  options: {
+    readonly name?: string;
+    readonly owners?: ReadonlyArray<string>;
+  } = {}
+): string {
+  const policy = generatePolicyPack(pack, {
+    name: options.name ?? "Acme Corp Security Policy",
+    owners: options.owners ?? ["security-platform@acme.example"],
+  });
   const example: OrgPolicy = {
-    version: 1,
-    name: "Acme Corp Security Policy",
-    description: "Organization-wide Claude Code security requirements",
-    policy_pack: "enterprise",
-    owners: ["security-platform@acme.example"],
+    ...policy,
     exceptions: [
       {
         id: "AS-EX-001",
@@ -454,18 +462,6 @@ export function generateExamplePolicy(): string {
         ticket: "SEC-1234",
       },
     ],
-    required_deny_list: ["Bash(rm -rf", "Bash(curl.*|.*sh"],
-    banned_mcp_servers: ["shell", "terminal"],
-    min_score: 75,
-    max_severity: "high",
-    required_hooks: [
-      {
-        event: "PreToolUse",
-        pattern: "agentshield",
-        description: "AgentShield runtime monitor must be installed",
-      },
-    ],
-    banned_tools: ["Bash(*)"],
   };
 
   return JSON.stringify(example, null, 2);

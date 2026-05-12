@@ -498,6 +498,7 @@ agentshield scan [options]         Scan configuration directory
   -v, --verbose                    Show detailed output
 
 agentshield init                   Generate secure baseline config
+agentshield policy init            Generate an organization policy preset
 ```
 
 Runtime monitor lifecycle:
@@ -514,6 +515,18 @@ agentshield runtime repair
 ```
 
 Organization policy files support enterprise metadata and temporary exceptions:
+
+```bash
+agentshield policy init --pack enterprise --owner security-platform@acme.example
+agentshield policy init --pack regulated --name "Acme Regulated Policy"
+```
+
+Policy pack presets are starter baselines, not hidden SaaS policy. `oss` keeps
+public repos permissive while requiring destructive-command deny entries;
+`team` adds the runtime hook; `enterprise` raises score gates and blocks broad
+tool allowlists; `regulated` disallows critical/high findings and bans broader
+MCP/tool surfaces; `high-risk-hooks-mcp` focuses on hook/MCP-heavy repos; and
+`ci-enforcement` is tuned for branch-protection evidence.
 
 ```json
 {

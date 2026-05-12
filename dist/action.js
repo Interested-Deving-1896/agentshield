@@ -62,6 +62,148 @@ var init_types = __esm({
   }
 });
 
+// src/policy/presets.ts
+function listPolicyPacks() {
+  return PACK_SUMMARIES;
+}
+function generatePolicyPack(pack, options = {}) {
+  const policy = buildPolicyPack(pack);
+  return {
+    ...policy,
+    name: options.name ?? policy.name,
+    owners: [...options.owners ?? policy.owners ?? []]
+  };
+}
+function buildPolicyPack(pack) {
+  switch (pack) {
+    case "oss":
+      return {
+        ...basePolicy(pack, "AgentShield OSS Policy"),
+        description: "Public-repository baseline for obvious destructive tools and risky shell MCPs.",
+        min_score: 70,
+        max_severity: "high"
+      };
+    case "team":
+      return {
+        ...basePolicy(pack, "AgentShield Team Policy"),
+        description: "Shared team baseline with runtime monitoring and risky MCP restrictions.",
+        min_score: 75,
+        max_severity: "high",
+        required_hooks: [RUNTIME_HOOK]
+      };
+    case "enterprise":
+      return {
+        ...basePolicy(pack, "AgentShield Enterprise Policy"),
+        description: "Managed organization baseline with runtime hooks and strict score gates.",
+        min_score: 85,
+        max_severity: "high",
+        required_hooks: [RUNTIME_HOOK],
+        banned_tools: ["Bash(*)"]
+      };
+    case "regulated":
+      return {
+        ...basePolicy(pack, "AgentShield Regulated Policy"),
+        description: "Compliance baseline for sensitive repositories and regulated environments.",
+        min_score: 90,
+        max_severity: "medium",
+        required_hooks: [RUNTIME_HOOK, POST_TOOL_HOOK],
+        banned_mcp_servers: [...RISKY_MCP_SERVERS, "filesystem*", "browser*"],
+        banned_tools: ["Bash(*)", "WebFetch(*)"]
+      };
+    case "high-risk-hooks-mcp":
+      return {
+        ...basePolicy(pack, "AgentShield High-risk Hooks/MCP Policy"),
+        description: "Focused gate for repositories shipping hook code, MCP configs, or plugin manifests.",
+        min_score: 80,
+        max_severity: "high",
+        required_hooks: [RUNTIME_HOOK, POST_TOOL_HOOK],
+        banned_mcp_servers: [...RISKY_MCP_SERVERS, "filesystem*"],
+        banned_tools: ["Bash(*)"]
+      };
+    case "ci-enforcement":
+      return {
+        ...basePolicy(pack, "AgentShield CI Enforcement Policy"),
+        description: "Branch-protection baseline for collecting policy status in CI.",
+        min_score: 80,
+        max_severity: "high",
+        required_hooks: [RUNTIME_HOOK],
+        banned_tools: ["Bash(*)"]
+      };
+  }
+}
+function basePolicy(policyPack, name) {
+  return {
+    version: 1,
+    name,
+    policy_pack: policyPack,
+    owners: [],
+    exceptions: [],
+    required_deny_list: [...REQUIRED_DESTRUCTIVE_DENY_LIST],
+    banned_mcp_servers: [...RISKY_MCP_SERVERS],
+    min_score: 75,
+    max_severity: "high",
+    required_hooks: [],
+    banned_tools: []
+  };
+}
+var REQUIRED_DESTRUCTIVE_DENY_LIST, RISKY_MCP_SERVERS, RUNTIME_HOOK, POST_TOOL_HOOK, PACK_SUMMARIES;
+var init_presets = __esm({
+  "src/policy/presets.ts"() {
+    "use strict";
+    REQUIRED_DESTRUCTIVE_DENY_LIST = [
+      "Bash(rm",
+      "Bash(curl",
+      "Bash(wget"
+    ];
+    RISKY_MCP_SERVERS = [
+      "shell*",
+      "terminal*"
+    ];
+    RUNTIME_HOOK = {
+      event: "PreToolUse",
+      pattern: "agentshield",
+      description: "AgentShield runtime monitor must be installed"
+    };
+    POST_TOOL_HOOK = {
+      event: "PostToolUse",
+      pattern: "agentshield",
+      description: "AgentShield post-tool evidence hook must be installed"
+    };
+    PACK_SUMMARIES = [
+      {
+        id: "oss",
+        label: "OSS",
+        description: "Baseline policy for public repositories with permissive contribution paths."
+      },
+      {
+        id: "team",
+        label: "Team",
+        description: "Default team policy for shared private repositories and active development."
+      },
+      {
+        id: "enterprise",
+        label: "Enterprise",
+        description: "Stricter organization policy for managed production engineering groups."
+      },
+      {
+        id: "regulated",
+        label: "Regulated",
+        description: "High-assurance policy for compliance, audit, and sensitive-data environments."
+      },
+      {
+        id: "high-risk-hooks-mcp",
+        label: "High-risk hooks/MCP",
+        description: "Focused policy for repositories with privileged hooks or MCP integrations."
+      },
+      {
+        id: "ci-enforcement",
+        label: "CI enforcement",
+        description: "Branch-protection policy tuned for GitHub Actions enforcement gates."
+      }
+    ];
+  }
+});
+
 // src/policy/evaluate.ts
 import { readFileSync as readFileSync2, existsSync as existsSync2 } from "fs";
 function loadPolicy(policyPath) {
@@ -357,13 +499,13 @@ function renderPolicyEvaluation(evaluation) {
   lines.push("");
   return lines.join("\n");
 }
-function generateExamplePolicy() {
+function generateExamplePolicy(pack = "enterprise", options = {}) {
+  const policy = generatePolicyPack(pack, {
+    name: options.name ?? "Acme Corp Security Policy",
+    owners: options.owners ?? ["security-platform@acme.example"]
+  });
   const example = {
-    version: 1,
-    name: "Acme Corp Security Policy",
-    description: "Organization-wide Claude Code security requirements",
-    policy_pack: "enterprise",
-    owners: ["security-platform@acme.example"],
+    ...policy,
     exceptions: [
       {
         id: "AS-EX-001",
@@ -374,19 +516,7 @@ function generateExamplePolicy() {
         scope: "agentshield",
         ticket: "SEC-1234"
       }
-    ],
-    required_deny_list: ["Bash(rm -rf", "Bash(curl.*|.*sh"],
-    banned_mcp_servers: ["shell", "terminal"],
-    min_score: 75,
-    max_severity: "high",
-    required_hooks: [
-      {
-        event: "PreToolUse",
-        pattern: "agentshield",
-        description: "AgentShield runtime monitor must be installed"
-      }
-    ],
-    banned_tools: ["Bash(*)"]
+    ]
   };
   return JSON.stringify(example, null, 2);
 }
@@ -395,6 +525,7 @@ var init_evaluate = __esm({
   "src/policy/evaluate.ts"() {
     "use strict";
     init_types();
+    init_presets();
     SEVERITY_ORDER = {
       critical: 0,
       high: 1,
@@ -413,6 +544,8 @@ __export(policy_exports, {
   PolicyPackSchema: () => PolicyPackSchema,
   evaluatePolicy: () => evaluatePolicy,
   generateExamplePolicy: () => generateExamplePolicy,
+  generatePolicyPack: () => generatePolicyPack,
+  listPolicyPacks: () => listPolicyPacks,
   loadPolicy: () => loadPolicy,
   renderPolicyEvaluation: () => renderPolicyEvaluation
 });
@@ -420,6 +553,7 @@ var init_policy = __esm({
   "src/policy/index.ts"() {
     "use strict";
     init_evaluate();
+    init_presets();
     init_types();
   }
 });
