@@ -475,12 +475,27 @@ Detailed request/response and schema notes live in [`API.md`](./API.md).
 | `fail-on-findings` | `true` | Fail the action if findings meet severity threshold |
 | `format` | `terminal` | Output format: terminal, json, markdown, sarif |
 | `sarif-output` | `agentshield-results.sarif` | SARIF output path when `format` is `sarif` |
+| `baseline` | `""` | Optional AgentShield baseline JSON path for drift comparison |
+| `save-baseline` | `""` | Optional path to write the current scan as a new baseline |
 | `policy` | `""` | Optional organization policy JSON path |
 | `fail-on-policy` | `true` | Fail the action if the organization policy is non-compliant |
 
-**Outputs:** `score` (0–100), `grade` (A–F), `total-findings`, `critical-count`, `sarif-path`, `policy-status`, `policy-violations`
+**Outputs:** `score` (0–100), `grade` (A–F), `total-findings`, `critical-count`, `sarif-path`, `baseline-path`, `baseline-status`, `new-findings`, `resolved-findings`, `unchanged-findings`, `score-delta`, `policy-status`, `policy-violations`
 
-The action writes a markdown job summary and emits GitHub annotations inline on affected files. When `format: sarif` is set, it also writes a SARIF 2.1.0 report that can be uploaded to GitHub code scanning with `github/codeql-action/upload-sarif`. When `policy` is set, the SARIF report includes organization-policy violations as `agentshield-policy/*` code-scanning results, appends the organization policy result to the job summary, emits policy violation annotations, and fails by default unless `fail-on-policy: "false"` is set.
+The action writes a markdown job summary and emits GitHub annotations inline on affected files. When `format: sarif` is set, it also writes a SARIF 2.1.0 report that can be uploaded to GitHub code scanning with `github/codeql-action/upload-sarif`. When `baseline` is set, the action appends a baseline drift summary, emits regression annotations for new findings, and reports `baseline-status` as `passed`, `failed`, `missing`, or `not-run`. When `policy` is set, the SARIF report includes organization-policy violations as `agentshield-policy/*` code-scanning results, appends the organization policy result to the job summary, emits policy violation annotations, and fails by default unless `fail-on-policy: "false"` is set.
+
+Baseline drift gate:
+
+```yaml
+- name: AgentShield Drift Gate
+  uses: affaan-m/agentshield@v1
+  with:
+    path: "."
+    baseline: ".github/agentshield-baseline.json"
+    fail-on-findings: "false"
+```
+
+Use `fail-on-findings: "false"` when the workflow should fail only on drift from the baseline. Keep the default `fail-on-findings: "true"` when any current finding at or above `min-severity` should still fail the action.
 
 ## CLI Reference
 
@@ -499,6 +514,9 @@ agentshield scan [options]         Scan configuration directory
   --log <path>                     Write structured scan logs to a file
   --log-format <format>            Log format: ndjson or json
   --corpus                         Run built-in attack corpus benchmark
+  --baseline <path>                Compare against a baseline file
+  --save-baseline <path>           Save current scan results as a baseline file
+  --gate                           Fail on new critical/high findings or score drop
   --supply-chain                   Verify MCP package provenance and risk
   --supply-chain-online            Include npm registry metadata
   --policy <path>                  Validate against an organization policy

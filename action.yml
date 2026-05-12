@@ -27,6 +27,14 @@ inputs:
     description: "Path to write SARIF results when format is sarif"
     required: false
     default: "agentshield-results.sarif"
+  baseline:
+    description: "Path to an AgentShield baseline JSON file for drift comparison"
+    required: false
+    default: ""
+  save-baseline:
+    description: "Path to write the current scan as a new AgentShield baseline JSON file"
+    required: false
+    default: ""
   policy:
     description: "Path to an AgentShield organization policy JSON file"
     required: false
@@ -47,6 +55,18 @@ outputs:
     description: "Number of critical findings"
   sarif-path:
     description: "Path to the generated SARIF file when format is sarif"
+  baseline-path:
+    description: "Path to the generated baseline file when save-baseline is set"
+  baseline-status:
+    description: "Baseline drift status: not-run, missing, passed, or failed"
+  new-findings:
+    description: "Number of findings introduced since the baseline"
+  resolved-findings:
+    description: "Number of baseline findings resolved by the current scan"
+  unchanged-findings:
+    description: "Number of findings unchanged since the baseline"
+  score-delta:
+    description: "Numeric score delta relative to the baseline"
   policy-status:
     description: "Organization policy status: not-run, compliant, non-compliant, or error"
   policy-violations:

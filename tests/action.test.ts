@@ -42,6 +42,19 @@ describe("action helpers (logic verification)", () => {
     expect(actionYaml).toContain("policy-violations:");
   });
 
+  it("documents baseline drift inputs and outputs in action.yml", () => {
+    const actionYaml = readFileSync(resolve(process.cwd(), "action.yml"), "utf-8");
+
+    expect(actionYaml).toContain("baseline:");
+    expect(actionYaml).toContain("save-baseline:");
+    expect(actionYaml).toContain("baseline-path:");
+    expect(actionYaml).toContain("baseline-status:");
+    expect(actionYaml).toContain("new-findings:");
+    expect(actionYaml).toContain("resolved-findings:");
+    expect(actionYaml).toContain("unchanged-findings:");
+    expect(actionYaml).toContain("score-delta:");
+  });
+
   describe("escapeAnnotation", () => {
     it("escapes percent signs", () => {
       expect(escapeAnnotation("100%")).toBe("100%25");
