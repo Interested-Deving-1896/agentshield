@@ -1024,6 +1024,14 @@ describe("hookRules", () => {
       expect(findings.some((f) => f.id.includes("user-mod"))).toBe(true);
     });
 
+    it("does not flag passwd inside a secrets-detection regex", () => {
+      const file = makeHookScript(
+        'SECRET_PATTERN = r"(?i)(api[_-]?key|secret|password|passwd|auth[_-]?token|private[_-]?key)"'
+      );
+      const findings = runAllHookRules(file);
+      expect(findings.some((f) => f.id.includes("user-mod"))).toBe(false);
+    });
+
     it("does not flag non-hook files", () => {
       const file: ConfigFile = { path: "agent.md", type: "agent-md", content: "useradd something" };
       const findings = runAllHookRules(file);

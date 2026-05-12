@@ -9,6 +9,15 @@ function findAllMatches(content: string, pattern: RegExp): Array<RegExpMatchArra
   return [...content.matchAll(new RegExp(pattern.source, flags))];
 }
 
+function normalizeConfigPath(filePath: string): string {
+  return filePath.replace(/\\/g, "/");
+}
+
+function isAgentDocumentationFile(file: ConfigFile): boolean {
+  const path = normalizeConfigPath(file.path).toLowerCase();
+  return /(?:^|\/)agents\/(?:[^/]+\/)?readme\.md$/.test(path);
+}
+
 function getAgentFrontmatter(content: string): string | null {
   if (!content.startsWith("---")) return null;
 
@@ -1969,6 +1978,7 @@ export const agentRules: ReadonlyArray<Rule> = [
     category: "injection",
     check(file: ConfigFile): ReadonlyArray<Finding> {
       if (file.type !== "agent-md" && file.type !== "claude-md") return [];
+      if (isAgentDocumentationFile(file)) return [];
 
       const findings: Finding[] = [];
 

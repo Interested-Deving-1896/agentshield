@@ -2225,6 +2225,22 @@ function isInsideQuotedString(content, matchIndex) {
   }
   return inSingle || inDouble;
 }
+function isInsideRegexLiteral(line, relativeIndex) {
+  const before = line.slice(0, relativeIndex);
+  const after = line.slice(relativeIndex);
+  return /(?:^|[=\s(:[,])\/[^/\n]*$/.test(before) && /^[^/\n]*\//.test(after);
+}
+function isRegexLikeAlternationLiteral(content, matchIndex) {
+  const line = getLineContentAtIndex(content, matchIndex);
+  const { start } = getLineBounds(content, matchIndex);
+  const relativeIndex = matchIndex - start;
+  const beforeMatch = line.slice(0, relativeIndex);
+  const afterMatch = line.slice(relativeIndex);
+  const isPatternContainer = isInsideQuotedString(content, matchIndex) || isInsideRegexLiteral(line, relativeIndex);
+  if (!isPatternContainer) return false;
+  if (!beforeMatch.includes("|") && !afterMatch.includes("|")) return false;
+  return /\b(?:credential|password|pattern|regex|secret|token)\b/i.test(line);
+}
 function isBlockingGuardCommand(content) {
   return /\bexit\s+2\b/.test(content);
 }
@@ -3227,7 +3243,10 @@ var hookRules = [
       ];
       for (const { pattern, description } of userModPatterns) {
         const matches = findAllHookMatches(file, pattern);
-        for (const { match, line } of matches) {
+        for (const { match, line, content } of matches) {
+          if (isRegexLikeAlternationLiteral(content, match.index ?? 0)) {
+            continue;
+          }
           findings.push({
             id: `hooks-user-mod-${match.index}`,
             severity: "critical",
@@ -5857,6 +5876,13 @@ function findAllMatches3(content, pattern) {
   const flags = pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g";
   return [...content.matchAll(new RegExp(pattern.source, flags))];
 }
+function normalizeConfigPath2(filePath) {
+  return filePath.replace(/\\/g, "/");
+}
+function isAgentDocumentationFile(file) {
+  const path = normalizeConfigPath2(file.path).toLowerCase();
+  return /(?:^|\/)agents\/(?:[^/]+\/)?readme\.md$/.test(path);
+}
 function getAgentFrontmatter(content) {
   if (!content.startsWith("---")) return null;
   const frontmatterEnd = content.indexOf("---", 3);
@@ -7567,6 +7593,7 @@ var agentRules = [
     category: "injection",
     check(file) {
       if (file.type !== "agent-md" && file.type !== "claude-md") return [];
+      if (isAgentDocumentationFile(file)) return [];
       const findings = [];
       const extractionPatterns = [
         {
