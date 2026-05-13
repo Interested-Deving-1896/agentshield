@@ -11781,13 +11781,13 @@ var init_presets = __esm({
 });
 
 // src/policy/evaluate.ts
-import { readFileSync as readFileSync6, existsSync as existsSync9 } from "fs";
+import { readFileSync as readFileSync7, existsSync as existsSync10 } from "fs";
 function loadPolicy2(policyPath) {
-  if (!existsSync9(policyPath)) {
+  if (!existsSync10(policyPath)) {
     return { success: false, error: `Policy file not found: ${policyPath}` };
   }
   try {
-    const raw = readFileSync6(policyPath, "utf-8");
+    const raw = readFileSync7(policyPath, "utf-8");
     const parsed = JSON.parse(raw);
     return { success: true, policy: OrgPolicySchema.parse(parsed) };
   } catch (error) {
@@ -12219,7 +12219,7 @@ var init_types2 = __esm({
 });
 
 // src/baseline/compare.ts
-import { readFileSync as readFileSync7, writeFileSync as writeFileSync6, existsSync as existsSync10 } from "fs";
+import { readFileSync as readFileSync8, writeFileSync as writeFileSync6, existsSync as existsSync11 } from "fs";
 import { dirname as dirname5 } from "path";
 import { mkdirSync as mkdirSync6 } from "fs";
 function fingerprintFinding2(finding) {
@@ -12241,15 +12241,15 @@ function saveBaseline(findings, score, outputPath) {
     }))
   };
   const dir = dirname5(outputPath);
-  if (!existsSync10(dir)) {
+  if (!existsSync11(dir)) {
     mkdirSync6(dir, { recursive: true });
   }
   writeFileSync6(outputPath, JSON.stringify(serialized, null, 2));
 }
 function loadBaseline(baselinePath) {
-  if (!existsSync10(baselinePath)) return null;
+  if (!existsSync11(baselinePath)) return null;
   try {
-    const raw = readFileSync7(baselinePath, "utf-8");
+    const raw = readFileSync8(baselinePath, "utf-8");
     const parsed = JSON.parse(raw);
     if (parsed.version !== 1 || !Array.isArray(parsed.findings)) {
       return null;
@@ -13029,7 +13029,7 @@ init_scanner();
 import { Command } from "commander";
 import { resolve as resolve10 } from "path";
 import { dirname as dirname6 } from "path";
-import { existsSync as existsSync11, writeFileSync as writeFileSync7, appendFileSync as appendFileSync2, mkdirSync as mkdirSync7 } from "fs";
+import { existsSync as existsSync12, writeFileSync as writeFileSync7, appendFileSync as appendFileSync2, mkdirSync as mkdirSync7 } from "fs";
 
 // src/reporter/score.ts
 var SCORE_DEDUCTIONS = {
@@ -14474,7 +14474,7 @@ function normalizeUri(uri) {
 // src/evidence-pack/index.ts
 init_remediation();
 import { createHash as createHash2 } from "crypto";
-import { mkdirSync as mkdirSync2, writeFileSync as writeFileSync2 } from "fs";
+import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "fs";
 import { basename as basename3, resolve as resolve3 } from "path";
 import { homedir as homedir2 } from "os";
 var ARTIFACTS = [
@@ -14579,6 +14579,86 @@ function writeEvidencePack(options) {
   return {
     outputDir,
     files: ARTIFACTS.map((artifact) => artifact.file)
+  };
+}
+function verifyEvidencePack(outputDir) {
+  const resolvedOutputDir = resolve3(outputDir);
+  const manifestPath = resolve3(resolvedOutputDir, "manifest.json");
+  const errors = [];
+  if (!existsSync3(manifestPath)) {
+    return {
+      ok: false,
+      outputDir: resolvedOutputDir,
+      bundleDigest: null,
+      expectedBundleDigest: null,
+      artifacts: [],
+      errors: ["manifest.json is missing"]
+    };
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync2(manifestPath, "utf-8"));
+  } catch (error) {
+    return {
+      ok: false,
+      outputDir: resolvedOutputDir,
+      bundleDigest: null,
+      expectedBundleDigest: null,
+      artifacts: [],
+      errors: [`manifest.json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`]
+    };
+  }
+  const artifactContents = /* @__PURE__ */ new Map();
+  const artifacts = manifest.artifacts.map((artifact) => {
+    const artifactPath = resolve3(resolvedOutputDir, artifact.file);
+    if (artifact.file === "manifest.json") {
+      return {
+        file: artifact.file,
+        ok: artifact.sha256 === null && artifact.bytes === null,
+        expectedSha256: artifact.sha256,
+        actualSha256: null,
+        expectedBytes: artifact.bytes,
+        actualBytes: null
+      };
+    }
+    if (!existsSync3(artifactPath)) {
+      errors.push(`${artifact.file} is missing`);
+      return {
+        file: artifact.file,
+        ok: false,
+        expectedSha256: artifact.sha256,
+        actualSha256: null,
+        expectedBytes: artifact.bytes,
+        actualBytes: null
+      };
+    }
+    const content = readFileSync2(artifactPath, "utf-8");
+    artifactContents.set(artifact.file, content);
+    const actual = hashContent(content);
+    const ok = actual.sha256 === artifact.sha256 && actual.bytes === artifact.bytes;
+    if (!ok) {
+      errors.push(`${artifact.file} digest mismatch`);
+    }
+    return {
+      file: artifact.file,
+      ok,
+      expectedSha256: artifact.sha256,
+      actualSha256: actual.sha256,
+      expectedBytes: artifact.bytes,
+      actualBytes: actual.bytes
+    };
+  });
+  const bundleDigest = buildBundleDigest(artifactContents);
+  if (bundleDigest !== manifest.bundleDigest) {
+    errors.push("bundle digest mismatch");
+  }
+  return {
+    ok: errors.length === 0 && artifacts.every((artifact) => artifact.ok),
+    outputDir: resolvedOutputDir,
+    bundleDigest,
+    expectedBundleDigest: manifest.bundleDigest,
+    artifacts,
+    errors
   };
 }
 function writeText(outputDir, fileName, content) {
@@ -15435,7 +15515,7 @@ function renderInlineScore(score) {
 }
 
 // src/fixer/index.ts
-import { readFileSync as readFileSync2, writeFileSync as writeFileSync3 } from "fs";
+import { readFileSync as readFileSync3, writeFileSync as writeFileSync3 } from "fs";
 import { resolve as resolve4 } from "path";
 
 // src/fixer/transforms.ts
@@ -15519,7 +15599,7 @@ function applyFixes(scanResult) {
     const filePath = resolve4(scanResult.target.path, relPath);
     let content;
     try {
-      content = readFileSync2(filePath, "utf-8");
+      content = readFileSync3(filePath, "utf-8");
     } catch {
       for (const finding of findings) {
         skipped.push({
@@ -15604,7 +15684,7 @@ function renderFixSummary(result) {
 }
 
 // src/init/index.ts
-import { existsSync as existsSync3, mkdirSync as mkdirSync3, writeFileSync as writeFileSync4 } from "fs";
+import { existsSync as existsSync4, mkdirSync as mkdirSync3, writeFileSync as writeFileSync4 } from "fs";
 import { join as join4, resolve as resolve5 } from "path";
 function getDefaultSettings() {
   const settings = {
@@ -15706,7 +15786,7 @@ function getDefaultMcpConfig() {
   return JSON.stringify(config, null, 2);
 }
 function safeWriteFile(filePath, content) {
-  if (existsSync3(filePath)) {
+  if (existsSync4(filePath)) {
     return {
       path: filePath,
       status: "skipped",
@@ -15722,7 +15802,7 @@ function safeWriteFile(filePath, content) {
 function runInit(targetDir) {
   const baseDir = targetDir ? resolve5(targetDir) : resolve5(process.cwd());
   const claudeDir = join4(baseDir, ".claude");
-  if (!existsSync3(claudeDir)) {
+  if (!existsSync4(claudeDir)) {
     mkdirSync3(claudeDir, { recursive: true });
   }
   const files = [];
@@ -16415,7 +16495,7 @@ function startMiniClaw(config) {
 
 // src/watch/watcher.ts
 init_scanner();
-import { watch, existsSync as existsSync4, readdirSync as readdirSync2, statSync as statSync4 } from "fs";
+import { watch, existsSync as existsSync5, readdirSync as readdirSync2, statSync as statSync4 } from "fs";
 import { resolve as resolve7 } from "path";
 
 // src/watch/diff.ts
@@ -16566,7 +16646,7 @@ function startWatcher(config) {
   }
   for (const watchPath of config.paths) {
     const resolvedPath = resolve7(watchPath);
-    if (!existsSync4(resolvedPath)) continue;
+    if (!existsSync5(resolvedPath)) continue;
     const isDir = statSync4(resolvedPath).isDirectory();
     if (!isDir) continue;
     try {
@@ -16665,7 +16745,7 @@ function isRecursiveWatchUnsupported(error) {
 function performInitialScan(config) {
   try {
     const targetPath = config.paths[0];
-    if (!targetPath || !existsSync4(targetPath)) return null;
+    if (!targetPath || !existsSync5(targetPath)) return null;
     const result = scan(targetPath);
     const minIndex = SEVERITY_ORDER[config.minSeverity];
     const filteredFindings = result.findings.filter(
@@ -16682,7 +16762,7 @@ function performInitialScan(config) {
 async function handleChange(config, currentBaseline, onResult) {
   try {
     const targetPath = config.paths[0];
-    if (!targetPath || !existsSync4(targetPath)) return;
+    if (!targetPath || !existsSync5(targetPath)) return;
     const result = scan(targetPath);
     const minIndex = SEVERITY_ORDER[config.minSeverity];
     const filteredFindings = result.findings.filter(
@@ -16708,7 +16788,7 @@ async function handleChange(config, currentBaseline, onResult) {
 }
 
 // src/runtime/policy.ts
-import { readFileSync as readFileSync3, existsSync as existsSync5 } from "fs";
+import { readFileSync as readFileSync4, existsSync as existsSync6 } from "fs";
 import { resolve as resolve8 } from "path";
 
 // src/runtime/types.ts
@@ -16761,15 +16841,15 @@ function generateDefaultPolicy() {
 }
 
 // src/runtime/evaluator.ts
-import { appendFileSync, existsSync as existsSync6, mkdirSync as mkdirSync4 } from "fs";
+import { appendFileSync, existsSync as existsSync7, mkdirSync as mkdirSync4 } from "fs";
 import { dirname as dirname3 } from "path";
 
 // src/runtime/install.ts
-import { readFileSync as readFileSync5, writeFileSync as writeFileSync5, existsSync as existsSync8, mkdirSync as mkdirSync5, renameSync } from "fs";
+import { readFileSync as readFileSync6, writeFileSync as writeFileSync5, existsSync as existsSync9, mkdirSync as mkdirSync5, renameSync } from "fs";
 import { join as join7, dirname as dirname4 } from "path";
 
 // src/runtime/status.ts
-import { existsSync as existsSync7, readFileSync as readFileSync4 } from "fs";
+import { existsSync as existsSync8, readFileSync as readFileSync5 } from "fs";
 import { join as join6, resolve as resolve9 } from "path";
 function defaultLogPath(targetPath) {
   return resolve9(targetPath, ".agentshield", "runtime.ndjson");
@@ -16779,14 +16859,14 @@ function runtimePolicyPath(targetPath) {
 }
 function getRuntimeStatus(targetPath) {
   const settingsPath = resolveSettingsPath(targetPath);
-  const settingsExists = existsSync7(settingsPath);
+  const settingsExists = existsSync8(settingsPath);
   const policyPath = runtimePolicyPath(targetPath);
-  const policyExists = existsSync7(policyPath);
+  const policyExists = existsSync8(policyPath);
   let settingsValid = false;
   let hookCount = 0;
   if (settingsExists) {
     try {
-      const parsed = JSON.parse(readFileSync4(settingsPath, "utf-8"));
+      const parsed = JSON.parse(readFileSync5(settingsPath, "utf-8"));
       if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") {
         throw new Error("settings.json must contain an object");
       }
@@ -16806,7 +16886,7 @@ function getRuntimeStatus(targetPath) {
   let logPath = defaultLogPath(targetPath);
   if (policyExists) {
     try {
-      const parsed = JSON.parse(readFileSync4(policyPath, "utf-8"));
+      const parsed = JSON.parse(readFileSync5(policyPath, "utf-8"));
       const result = RuntimePolicySchema.safeParse(parsed);
       if (result.success) {
         policyValid = true;
@@ -16817,7 +16897,7 @@ function getRuntimeStatus(targetPath) {
       policyValid = false;
     }
   }
-  const logExists = existsSync7(logPath);
+  const logExists = existsSync8(logPath);
   const hookInstalled = hookCount > 0;
   let health;
   let checkExitCode;
@@ -16875,11 +16955,11 @@ function parseJsonObject(raw) {
   return parsed;
 }
 function readSettingsFile(settingsPath) {
-  if (!existsSync8(settingsPath)) {
+  if (!existsSync9(settingsPath)) {
     return { exists: false, valid: true, value: {} };
   }
   try {
-    const parsed = parseJsonObject(readFileSync5(settingsPath, "utf-8"));
+    const parsed = parseJsonObject(readFileSync6(settingsPath, "utf-8"));
     if (!parsed) {
       return { exists: true, valid: false, value: {} };
     }
@@ -16892,11 +16972,11 @@ function runtimePolicyPath2(targetPath) {
   return join7(targetPath, ".agentshield", "runtime-policy.json");
 }
 function hasValidRuntimePolicy(policyPath) {
-  if (!existsSync8(policyPath)) {
+  if (!existsSync9(policyPath)) {
     return false;
   }
   try {
-    const parsed = JSON.parse(readFileSync5(policyPath, "utf-8"));
+    const parsed = JSON.parse(readFileSync6(policyPath, "utf-8"));
     return RuntimePolicySchema.safeParse(parsed).success;
   } catch {
     return false;
@@ -16907,11 +16987,11 @@ function repairHint() {
 }
 function nextBackupPath(filePath) {
   const basePath = `${filePath}.agentshield.bak`;
-  if (!existsSync8(basePath)) {
+  if (!existsSync9(basePath)) {
     return basePath;
   }
   let index = 1;
-  while (existsSync8(`${basePath}.${index}`)) {
+  while (existsSync9(`${basePath}.${index}`)) {
     index += 1;
   }
   return `${basePath}.${index}`;
@@ -16924,11 +17004,11 @@ function backupFile(filePath) {
 function installRuntimeAtPath(targetPath, settingsPath) {
   const policyPath = runtimePolicyPath2(targetPath);
   const policyDir = dirname4(policyPath);
-  if (!existsSync8(policyDir)) {
+  if (!existsSync9(policyDir)) {
     mkdirSync5(policyDir, { recursive: true });
   }
   let policyCreated = false;
-  if (!existsSync8(policyPath)) {
+  if (!existsSync9(policyPath)) {
     writeFileSync5(policyPath, generateDefaultPolicy());
     policyCreated = true;
   }
@@ -16961,7 +17041,7 @@ function installRuntimeAtPath(targetPath, settingsPath) {
   const updatedHooks = { ...hooks, PreToolUse: updatedPreToolUse };
   const updatedSettings = { ...settings, hooks: updatedHooks };
   const dir = dirname4(settingsPath);
-  if (!existsSync8(dir)) {
+  if (!existsSync9(dir)) {
     mkdirSync5(dir, { recursive: true });
   }
   writeFileSync5(settingsPath, JSON.stringify(updatedSettings, null, 2));
@@ -16986,7 +17066,7 @@ function installRuntime(targetPath) {
       message: `settings.json exists but could not be parsed. ${repairHint()}`
     };
   }
-  if (existsSync8(policyPath) && !hasValidRuntimePolicy(policyPath)) {
+  if (existsSync9(policyPath) && !hasValidRuntimePolicy(policyPath)) {
     return {
       hookInstalled: false,
       policyCreated: false,
@@ -17005,14 +17085,14 @@ function repairRuntime(targetPath) {
   const settingsState = readSettingsFile(settingsPath);
   if (settingsState.exists && !settingsState.valid) {
     const dir = dirname4(settingsPath);
-    if (!existsSync8(dir)) {
+    if (!existsSync9(dir)) {
       mkdirSync5(dir, { recursive: true });
     }
     settingsBackupPath = backupFile(settingsPath);
   }
-  if (existsSync8(policyPath) && !hasValidRuntimePolicy(policyPath)) {
+  if (existsSync9(policyPath) && !hasValidRuntimePolicy(policyPath)) {
     const policyDir = dirname4(policyPath);
-    if (!existsSync8(policyDir)) {
+    if (!existsSync9(policyDir)) {
       mkdirSync5(policyDir, { recursive: true });
     }
     policyBackupPath = backupFile(policyPath);
@@ -17037,7 +17117,7 @@ function repairRuntime(targetPath) {
 }
 function uninstallRuntime(targetPath) {
   const settingsPath = resolveSettingsPath(targetPath);
-  if (!existsSync8(settingsPath)) {
+  if (!existsSync9(settingsPath)) {
     return { removed: false, message: "No settings.json found." };
   }
   const settingsState = readSettingsFile(settingsPath);
@@ -17063,9 +17143,9 @@ function uninstallRuntime(targetPath) {
 }
 function resolveSettingsPath(targetPath) {
   const claudeSettings = join7(targetPath, ".claude", "settings.json");
-  if (existsSync8(claudeSettings)) return claudeSettings;
+  if (existsSync9(claudeSettings)) return claudeSettings;
   const directSettings = join7(targetPath, "settings.json");
-  if (existsSync8(directSettings)) return directSettings;
+  if (existsSync9(directSettings)) return directSettings;
   return claudeSettings;
 }
 
@@ -17235,7 +17315,7 @@ function emptySupplyChainReport() {
 }
 program.command("scan").description("Scan a Claude Code configuration directory for security issues").option("-p, --path <path>", "Path to scan (default: ~/.claude or current dir)").option("-f, --format <format>", "Output format: terminal, json, markdown, html, sarif", "terminal").option("-o, --output <path>", "Write the primary report output to a file").option("--fix", "Auto-apply safe fixes", false).option("--opus", "Enable Opus 4.6 multi-agent deep analysis", false).option("--stream", "Stream Opus analysis in real-time", false).option("--injection", "Run active prompt injection testing against the config", false).option("--sandbox", "Execute hooks in sandbox and observe behavior", false).option("--taint", "Run taint analysis (data flow tracking)", false).option("--deep", "Run ALL analysis (injection + sandbox + taint + opus)", false).option("--log <path>", "Write structured scan log to file").option("--log-format <format>", "Log format: ndjson (default) or json", "ndjson").option("--corpus", "Run scanner validation against built-in attack corpus", false).option("--corpus-gate", "Run built-in attack corpus and fail if scanner accuracy regresses", false).option("--baseline <path>", "Compare against a baseline file and report regressions").option("--save-baseline <path>", "Save current scan results as a baseline file").option("--gate", "Fail if new critical/high findings or score drops (use with --baseline)", false).option("--supply-chain", "Verify MCP npm packages against known-bad list and typosquatting", false).option("--supply-chain-online", "Also query npm registry for metadata (requires network)", false).option("--policy <path>", "Validate against an organization policy file").option("--evidence-pack <dir>", "Write a portable evidence bundle for audits and security reviews").option("--remediation-plan <path>", "Write a stable-fingerprint JSON remediation plan").option("--no-evidence-redact", "Disable evidence-pack redaction of local paths, usernames, emails, and token-shaped strings").option("--min-severity <severity>", "Minimum severity to report: critical, high, medium, low, info", "info").option("-v, --verbose", "Show detailed output", false).action(async (options) => {
   const targetPath = resolveTargetPath(options.path);
-  if (!existsSync11(targetPath)) {
+  if (!existsSync12(targetPath)) {
     console.error(`Error: Path does not exist: ${targetPath}`);
     process.exit(1);
   }
@@ -17569,6 +17649,34 @@ program.command("init").description("Generate a secure baseline Claude Code conf
   const initResult = runInit(options.path);
   console.log(renderInitSummary(initResult));
 });
+var evidencePack = program.command("evidence-pack").description("Inspect and verify AgentShield evidence-pack bundles");
+evidencePack.command("verify").description("Verify evidence-pack artifact digests and bundle digest").argument("<dir>", "Evidence-pack directory").option("--json", "Emit machine-readable verification results", false).action((dir, options) => {
+  const result = verifyEvidencePack(dir);
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    console.log("");
+    console.log("AgentShield Evidence Pack Verification");
+    console.log(`Directory: ${result.outputDir}`);
+    console.log(`Status:    ${result.ok ? "passed" : "failed"}`);
+    console.log(`Digest:    ${result.bundleDigest ?? "not available"}`);
+    console.log("");
+    for (const artifact of result.artifacts) {
+      console.log(`- ${artifact.ok ? "OK" : "FAIL"} ${artifact.file}`);
+    }
+    if (result.errors.length > 0) {
+      console.log("");
+      console.log("Errors:");
+      for (const error of result.errors) {
+        console.log(`- ${error}`);
+      }
+    }
+    console.log("");
+  }
+  if (!result.ok) {
+    process.exit(6);
+  }
+});
 var baseline = program.command("baseline").description("Create and inspect AgentShield drift baselines");
 baseline.command("write").description("Scan a target and write the current findings as a baseline").option("-p, --path <path>", "Path to scan (default: ~/.claude or current dir)").requiredOption("-o, --output <path>", "Path to write the baseline JSON file").option("--min-severity <severity>", "Minimum severity to include: critical, high, medium, low, info", "info").option("--json", "Emit machine-readable baseline metadata", false).action(async (options) => {
   if (!validateMinSeverity(options.minSeverity)) {
@@ -17576,7 +17684,7 @@ baseline.command("write").description("Scan a target and write the current findi
     process.exit(1);
   }
   const targetPath = resolveTargetPath(options.path);
-  if (!existsSync11(targetPath)) {
+  if (!existsSync12(targetPath)) {
     console.error(`Error: Path does not exist: ${targetPath}`);
     process.exit(1);
   }
@@ -17611,7 +17719,7 @@ baseline.command("write").description("Scan a target and write the current findi
 });
 program.command("watch").description("Continuously monitor config directories for security regressions").option("-p, --path <path>", "Path to watch (default: ~/.claude or current dir)").option("--debounce <ms>", "Debounce interval in milliseconds", "500").option("--alert <mode>", "Alert mode: terminal, webhook, both", "terminal").option("--webhook <url>", "Webhook URL for alerts").option("--min-severity <severity>", "Minimum severity to track: critical, high, medium, low, info", "info").option("--block", "Exit non-zero if critical findings detected (for CI integration)", false).action((options) => {
   const targetPath = resolveTargetPath(options.path);
-  if (!existsSync11(targetPath)) {
+  if (!existsSync12(targetPath)) {
     console.error(`Error: Path does not exist: ${targetPath}`);
     process.exit(1);
   }
@@ -17651,7 +17759,7 @@ program.command("watch").description("Continuously monitor config directories fo
     ".claude"
   );
   const watchPaths = [targetPath];
-  if (existsSync11(homeClaude) && homeClaude !== targetPath) {
+  if (existsSync12(homeClaude) && homeClaude !== targetPath) {
     watchPaths.push(homeClaude);
     console.log(`  Also watching:  ${homeClaude}`);
   }
@@ -17766,7 +17874,7 @@ policyCmd.command("init").description("Generate an example organization policy f
   const { generateExamplePolicy: generateExamplePolicy2, listPolicyPacks: listPolicyPacks2, PolicyPackSchema: PolicyPackSchema2 } = await Promise.resolve().then(() => (init_policy(), policy_exports));
   const outputPath = resolve10(options.output);
   const packResult = PolicyPackSchema2.safeParse(options.pack);
-  if (existsSync11(outputPath)) {
+  if (existsSync12(outputPath)) {
     console.error(`
   Error: Policy file already exists at ${outputPath}
 `);
@@ -17780,7 +17888,7 @@ policyCmd.command("init").description("Generate an example organization policy f
     process.exit(1);
   }
   const dir = resolve10(outputPath, "..");
-  if (!existsSync11(dir)) {
+  if (!existsSync12(dir)) {
     mkdirSync7(dir, { recursive: true });
   }
   writeFileSync7(outputPath, generateExamplePolicy2(packResult.data, {
@@ -17888,14 +17996,14 @@ function resolveTargetPath(pathArg) {
     return resolve10(pathArg);
   }
   const localClaude = resolve10(process.cwd(), ".claude");
-  if (existsSync11(localClaude)) {
+  if (existsSync12(localClaude)) {
     return localClaude;
   }
   const homeClaude = resolve10(
     process.env.HOME ?? process.env.USERPROFILE ?? ".",
     ".claude"
   );
-  if (existsSync11(homeClaude)) {
+  if (existsSync12(homeClaude)) {
     return homeClaude;
   }
   return process.cwd();

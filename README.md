@@ -407,6 +407,14 @@ fingerprints, severity, file, fixability, and the recommended next command.
 They intentionally omit raw evidence and fix before/after values so teams can
 attach the plan to tickets without copying token-shaped strings.
 
+Verify a saved evidence pack before attaching it to CI artifacts or customer
+handoffs:
+
+```bash
+agentshield evidence-pack verify ./agentshield-evidence
+agentshield evidence-pack verify ./agentshield-evidence --json
+```
+
 ### JSON Report Shape
 
 `agentshield scan --format json` is the supported machine-readable scanner interface today.
@@ -552,6 +560,7 @@ agentshield scan [options]         Scan configuration directory
 
 agentshield init                   Generate secure baseline config
 agentshield baseline write         Write a scan baseline JSON file
+agentshield evidence-pack verify   Verify artifact and bundle digests
 agentshield policy init            Generate an organization policy preset
 ```
 
