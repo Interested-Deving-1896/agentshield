@@ -374,6 +374,7 @@ export interface CorpusValidationResult {
   readonly detectionRate: number;
   readonly readyForRegressionGate: boolean;
   readonly categoryBreakdown: ReadonlyArray<CorpusCategoryBreakdown>;
+  readonly accuracyRecommendations: ReadonlyArray<CorpusAccuracyRecommendation>;
   readonly results: ReadonlyArray<{
     readonly attackId: string;
     readonly attackName: string;
@@ -388,6 +389,17 @@ export interface CorpusCategoryBreakdown {
   readonly detected: number;
   readonly missed: number;
   readonly detectionRate: number;
+}
+
+export interface CorpusAccuracyRecommendation {
+  readonly category: string;
+  readonly priority: "critical" | "high" | "medium";
+  readonly missedConfigs: number;
+  readonly totalConfigs: number;
+  readonly detectionRate: number;
+  readonly configIds: ReadonlyArray<string>;
+  readonly missingRules: ReadonlyArray<string>;
+  readonly action: string;
 }
 
 // ─── Scan Log Entry ───────────────────────────────────────

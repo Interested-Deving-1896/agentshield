@@ -311,4 +311,22 @@ describe("validateCorpus", () => {
     expect(gate.failedCategories.length).toBeGreaterThan(0);
     expect(gate.failedCategories.every((category) => category.missed > 0)).toBe(true);
   });
+
+  it("prioritizes corpus accuracy recommendations by missed coverage", () => {
+    const emptyFn = () => new Map<string, ReadonlyArray<Finding>>();
+    const validation = validateCorpus(emptyFn, allRules);
+    const gate = evaluateCorpusGate(validation);
+
+    expect(validation.accuracyRecommendations.length).toBeGreaterThan(0);
+    expect(gate.accuracyRecommendations).toEqual(validation.accuracyRecommendations);
+
+    const firstRecommendation = gate.accuracyRecommendations[0];
+    expect(firstRecommendation.priority).toBe("critical");
+    expect(firstRecommendation.missedConfigs).toBeGreaterThan(0);
+    expect(firstRecommendation.totalConfigs).toBeGreaterThanOrEqual(firstRecommendation.missedConfigs);
+    expect(firstRecommendation.detectionRate).toBe(0);
+    expect(firstRecommendation.configIds.length).toBe(firstRecommendation.missedConfigs);
+    expect(firstRecommendation.missingRules.length).toBeGreaterThan(0);
+    expect(firstRecommendation.action).toContain(firstRecommendation.category);
+  });
 });
