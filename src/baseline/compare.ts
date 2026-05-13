@@ -1,6 +1,10 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { mkdirSync } from "node:fs";
+import {
+  fingerprintFinding,
+  legacyEvidenceFingerprint,
+} from "../fingerprint.js";
 import type { Finding, SecurityScore } from "../types.js";
 import type {
   SerializedBaseline,
@@ -10,12 +14,7 @@ import type {
 } from "./types.js";
 import { DEFAULT_GATE_CONFIG } from "./types.js";
 
-/**
- * Create a fingerprint for a finding (stable across scans).
- */
-export function fingerprintFinding(finding: Finding): string {
-  return `${finding.id}::${finding.file}::${finding.evidence ?? ""}`;
-}
+export { fingerprintFinding } from "../fingerprint.js";
 
 /**
  * Save current scan results as a baseline file.
@@ -35,7 +34,6 @@ export function saveBaseline(
       category: f.category,
       title: f.title,
       file: f.file,
-      evidence: f.evidence,
       fingerprint: fingerprintFinding(f),
     })),
   };
@@ -77,10 +75,13 @@ export function compareBaseline(
   currentScore: SecurityScore
 ): BaselineComparison {
   const baselineFingerprints = new Set(
-    baseline.findings.map((f) => f.fingerprint)
+    baseline.findings.flatMap((finding) => baselineFingerprintsFor(finding))
   );
   const currentFingerprints = new Set(
-    currentFindings.map(fingerprintFinding)
+    currentFindings.flatMap((finding) => [
+      fingerprintFinding(finding),
+      legacyEvidenceFingerprint(finding),
+    ])
   );
 
   const newFindings = currentFindings.filter(
@@ -88,7 +89,7 @@ export function compareBaseline(
   );
 
   const resolvedFindings = baseline.findings.filter(
-    (f) => !currentFingerprints.has(f.fingerprint)
+    (f) => baselineFingerprintsFor(f).every((fingerprint) => !currentFingerprints.has(fingerprint))
   );
 
   const unchangedCount =
@@ -120,6 +121,19 @@ export function compareBaseline(
     newCriticalCount,
     newHighCount,
   };
+}
+
+function baselineFingerprintsFor(
+  finding: SerializedBaseline["findings"][number]
+): string[] {
+  const fingerprints = new Set<string>([finding.fingerprint]);
+
+  if (finding.evidence !== undefined) {
+    fingerprints.add(fingerprintFinding(finding));
+    fingerprints.add(legacyEvidenceFingerprint(finding));
+  }
+
+  return [...fingerprints];
 }
 
 /**

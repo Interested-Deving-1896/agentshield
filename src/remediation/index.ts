@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
+import { fingerprintFinding } from "../fingerprint.js";
 import type { Finding, SecurityReport, Severity } from "../types.js";
 
 export interface RemediationPlanOptions {
@@ -117,7 +117,7 @@ export function writeRemediationPlan(
 function toPlanFinding(finding: Finding): RemediationPlanFinding {
   const autoFixable = finding.fix?.auto === true;
   return {
-    fingerprint: fingerprintFindingForPlan(finding),
+    fingerprint: fingerprintFinding(finding),
     id: finding.id,
     severity: finding.severity,
     category: finding.category,
@@ -138,13 +138,6 @@ function toPlanFinding(finding: Finding): RemediationPlanFinding {
         }
       : undefined,
   };
-}
-
-function fingerprintFindingForPlan(finding: Finding): string {
-  const evidenceHash = finding.evidence
-    ? createHash("sha256").update(finding.evidence).digest("hex").slice(0, 16)
-    : "no-evidence";
-  return `${finding.id}::${finding.file}::sha256:${evidenceHash}`;
 }
 
 function countBySeverity(findings: ReadonlyArray<Finding>): Record<Severity, number> {

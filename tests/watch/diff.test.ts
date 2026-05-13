@@ -35,14 +35,15 @@ function makeScore(overrides: Partial<SecurityScore> = {}): SecurityScore {
 }
 
 describe("fingerprintFinding", () => {
-  it("generates a stable fingerprint from id, file, and evidence", () => {
+  it("generates a stable hashed fingerprint from id, file, and evidence", () => {
     const finding = makeFinding({
       id: "SEC-001",
       file: "settings.json",
       evidence: "allow: Bash(*)",
     });
     const fp = fingerprintFinding(finding);
-    expect(fp).toBe("SEC-001::settings.json::allow: Bash(*)");
+    expect(fp).toMatch(/^SEC-001::settings\.json::sha256:[a-f0-9]{16}$/);
+    expect(fp).not.toContain("allow: Bash(*)");
   });
 
   it("handles missing evidence", () => {
@@ -52,7 +53,7 @@ describe("fingerprintFinding", () => {
       evidence: undefined,
     });
     const fp = fingerprintFinding(finding);
-    expect(fp).toBe("SEC-002::mcp.json::");
+    expect(fp).toBe("SEC-002::mcp.json::sha256:no-evidence");
   });
 
   it("produces different fingerprints for different findings", () => {
@@ -81,8 +82,10 @@ describe("createBaseline", () => {
     expect(baseline.findings).toEqual(findings);
     expect(baseline.score).toEqual(score);
     expect(baseline.findingIds.size).toBe(2);
-    expect(baseline.findingIds.has("R1::a.json::ev1")).toBe(true);
-    expect(baseline.findingIds.has("R2::b.json::ev2")).toBe(true);
+    expect([...baseline.findingIds]).toEqual([
+      expect.stringMatching(/^R1::a\.json::sha256:[a-f0-9]{16}$/),
+      expect.stringMatching(/^R2::b\.json::sha256:[a-f0-9]{16}$/),
+    ]);
     expect(baseline.timestamp).toBeTruthy();
   });
 

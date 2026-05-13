@@ -572,7 +572,11 @@ agentshield baseline write --path .claude --output baseline.json --json
 ```
 
 The baseline command is a first-class wrapper around the existing scan baseline
-format. Use it to create the accepted snapshot, then compare future scans with
+format. New baselines store stable hashed evidence fingerprints and omit raw
+evidence values, so teams can keep baseline snapshots in CI without copying
+token-shaped strings into long-lived artifacts. Existing raw-evidence baselines
+remain comparable during migration. Use it to create the accepted snapshot,
+then compare future scans with
 `agentshield scan --baseline .github/agentshield-baseline.json --gate`.
 
 Runtime monitor lifecycle:

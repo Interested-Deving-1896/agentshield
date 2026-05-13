@@ -8,6 +8,26 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
+// src/fingerprint.ts
+import { createHash } from "crypto";
+function fingerprintFinding(finding) {
+  return `${finding.id}::${finding.file}::${evidenceFingerprint(finding.evidence)}`;
+}
+function legacyEvidenceFingerprint(finding) {
+  return `${finding.id}::${finding.file}::${finding.evidence ?? ""}`;
+}
+function evidenceFingerprint(evidence) {
+  if (!evidence) {
+    return "sha256:no-evidence";
+  }
+  return `sha256:${createHash("sha256").update(evidence).digest("hex").slice(0, 16)}`;
+}
+var init_fingerprint = __esm({
+  "src/fingerprint.ts"() {
+    "use strict";
+  }
+});
+
 // src/policy/types.ts
 import { z } from "zod";
 var SeveritySchema, PolicyPackSchema, PolicyExceptionSchema, OrgPolicySchema;
@@ -646,9 +666,6 @@ var init_types2 = __esm({
 import { readFileSync as readFileSync4, writeFileSync as writeFileSync3, existsSync as existsSync5 } from "fs";
 import { dirname as dirname3 } from "path";
 import { mkdirSync as mkdirSync3 } from "fs";
-function fingerprintFinding(finding) {
-  return `${finding.id}::${finding.file}::${finding.evidence ?? ""}`;
-}
 function saveBaseline(findings, score, outputPath) {
   const serialized = {
     version: 1,
@@ -660,7 +677,6 @@ function saveBaseline(findings, score, outputPath) {
       category: f.category,
       title: f.title,
       file: f.file,
-      evidence: f.evidence,
       fingerprint: fingerprintFinding(f)
     }))
   };
@@ -685,16 +701,19 @@ function loadBaseline(baselinePath) {
 }
 function compareBaseline(baseline, currentFindings, currentScore) {
   const baselineFingerprints = new Set(
-    baseline.findings.map((f) => f.fingerprint)
+    baseline.findings.flatMap((finding) => baselineFingerprintsFor(finding))
   );
   const currentFingerprints = new Set(
-    currentFindings.map(fingerprintFinding)
+    currentFindings.flatMap((finding) => [
+      fingerprintFinding(finding),
+      legacyEvidenceFingerprint(finding)
+    ])
   );
   const newFindings = currentFindings.filter(
     (f) => !baselineFingerprints.has(fingerprintFinding(f))
   );
   const resolvedFindings = baseline.findings.filter(
-    (f) => !currentFingerprints.has(f.fingerprint)
+    (f) => baselineFingerprintsFor(f).every((fingerprint) => !currentFingerprints.has(fingerprint))
   );
   const unchangedCount = currentFindings.length - newFindings.length;
   const scoreDelta = currentScore.numericScore - baseline.score.numericScore;
@@ -718,6 +737,14 @@ function compareBaseline(baseline, currentFindings, currentScore) {
     newCriticalCount,
     newHighCount
   };
+}
+function baselineFingerprintsFor(finding) {
+  const fingerprints = /* @__PURE__ */ new Set([finding.fingerprint]);
+  if (finding.evidence !== void 0) {
+    fingerprints.add(fingerprintFinding(finding));
+    fingerprints.add(legacyEvidenceFingerprint(finding));
+  }
+  return [...fingerprints];
 }
 function evaluateGate(comparison, config = DEFAULT_GATE_CONFIG) {
   const reasons = [];
@@ -800,7 +827,9 @@ function renderGateResult(result) {
 var init_compare = __esm({
   "src/baseline/compare.ts"() {
     "use strict";
+    init_fingerprint();
     init_types2();
+    init_fingerprint();
   }
 });
 
@@ -9700,8 +9729,8 @@ import { basename as basename3, resolve as resolve3 } from "path";
 import { homedir as homedir2 } from "os";
 
 // src/remediation/index.ts
+init_fingerprint();
 import { mkdirSync, writeFileSync } from "fs";
-import { createHash } from "crypto";
 import { dirname as dirname2, resolve as resolve2 } from "path";
 var ZERO_BY_SEVERITY = {
   critical: 0,
@@ -9739,7 +9768,7 @@ function buildRemediationPlan(report, options = {}) {
 function toPlanFinding(finding) {
   const autoFixable = finding.fix?.auto === true;
   return {
-    fingerprint: fingerprintFindingForPlan(finding),
+    fingerprint: fingerprintFinding(finding),
     id: finding.id,
     severity: finding.severity,
     category: finding.category,
@@ -9756,10 +9785,6 @@ function toPlanFinding(finding) {
       auto: finding.fix.auto
     } : void 0
   };
-}
-function fingerprintFindingForPlan(finding) {
-  const evidenceHash = finding.evidence ? createHash("sha256").update(finding.evidence).digest("hex").slice(0, 16) : "no-evidence";
-  return `${finding.id}::${finding.file}::sha256:${evidenceHash}`;
 }
 function countBySeverity(findings) {
   const counts = { ...ZERO_BY_SEVERITY };
