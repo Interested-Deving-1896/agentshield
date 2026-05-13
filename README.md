@@ -92,6 +92,9 @@ agentshield scan --format json
 # Generate an HTML executive security report
 agentshield scan --format html > report.html
 
+# Generate a portable audit bundle
+agentshield scan --evidence-pack ./agentshield-evidence
+
 # Three-agent Opus 4.6 adversarial analysis (requires ANTHROPIC_API_KEY)
 agentshield scan --opus --stream
 
@@ -385,6 +388,14 @@ Requires `ANTHROPIC_API_KEY` environment variable.
 | JSON | `--format json` | CI pipelines, programmatic access |
 | Markdown | `--format markdown` | Documentation, PRs |
 | HTML | `--format html` | Executive report with risk posture and priorities |
+| Evidence pack | `--evidence-pack <dir>` | Audit and buyer reviews |
+
+Evidence packs write a deterministic directory containing `manifest.json`,
+`README.md`, `agentshield-report.json`, `agentshield-report.html`,
+`agentshield-results.sarif`, `policy-evaluation.json`,
+`baseline-comparison.json`, and `supply-chain.json`. Redaction is enabled by
+default for local paths, usernames, emails, and token-shaped strings; use
+`--no-evidence-redact` only for private internal bundles.
 
 ### JSON Report Shape
 
@@ -520,6 +531,8 @@ agentshield scan [options]         Scan configuration directory
   --supply-chain                   Verify MCP package provenance and risk
   --supply-chain-online            Include npm registry metadata
   --policy <path>                  Validate against an organization policy
+  --evidence-pack <dir>            Write portable evidence bundle
+  --no-evidence-redact             Disable evidence-pack redaction
   --min-severity <severity>        Filter: critical, high, medium, low, info
   -v, --verbose                    Show detailed output
 

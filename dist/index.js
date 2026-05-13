@@ -5074,8 +5074,8 @@ var init_mcp = __esm({
           const findings = [];
           function isNpxCommand(cmd) {
             if (!cmd) return false;
-            const basename3 = cmd.split(/[\\/]/).pop() ?? "";
-            return basename3 === "npx" || basename3 === "npx.cmd" || basename3 === "npx.exe";
+            const basename4 = cmd.split(/[\\/]/).pop() ?? "";
+            return basename4 === "npx" || basename4 === "npx.cmd" || basename4 === "npx.exe";
           }
           const npxValueTakingOptions = /* @__PURE__ */ new Set([
             "-p",
@@ -9781,7 +9781,7 @@ async function executeHookInSandbox(hookCommand, options = {}) {
     controller.abort();
   }, opts.timeout);
   try {
-    const result = await new Promise((resolve9) => {
+    const result = await new Promise((resolve10) => {
       const stdoutChunks = [];
       const stderrChunks = [];
       const child = spawn(hookCommand, [], {
@@ -9798,7 +9798,7 @@ async function executeHookInSandbox(hookCommand, options = {}) {
         stderrChunks.push(chunk);
       });
       child.on("close", (code) => {
-        resolve9({
+        resolve10({
           exitCode: code,
           stdout: Buffer.concat(stdoutChunks).toString("utf-8"),
           stderr: Buffer.concat(stderrChunks).toString("utf-8")
@@ -9806,13 +9806,13 @@ async function executeHookInSandbox(hookCommand, options = {}) {
       });
       child.on("error", (err) => {
         if (err.code === "ABORT_ERR" || err.name === "AbortError") {
-          resolve9({
+          resolve10({
             exitCode: null,
             stdout: Buffer.concat(stdoutChunks).toString("utf-8"),
             stderr: Buffer.concat(stderrChunks).toString("utf-8")
           });
         } else {
-          resolve9({
+          resolve10({
             exitCode: null,
             stdout: Buffer.concat(stdoutChunks).toString("utf-8"),
             stderr: Buffer.concat(stderrChunks).toString("utf-8") + `
@@ -11834,9 +11834,9 @@ var init_types2 = __esm({
 });
 
 // src/baseline/compare.ts
-import { readFileSync as readFileSync7, writeFileSync as writeFileSync4, existsSync as existsSync9 } from "fs";
+import { readFileSync as readFileSync7, writeFileSync as writeFileSync5, existsSync as existsSync9 } from "fs";
 import { dirname as dirname4 } from "path";
-import { mkdirSync as mkdirSync4 } from "fs";
+import { mkdirSync as mkdirSync5 } from "fs";
 function fingerprintFinding2(finding) {
   return `${finding.id}::${finding.file}::${finding.evidence ?? ""}`;
 }
@@ -11857,9 +11857,9 @@ function saveBaseline(findings, score, outputPath) {
   };
   const dir = dirname4(outputPath);
   if (!existsSync9(dir)) {
-    mkdirSync4(dir, { recursive: true });
+    mkdirSync5(dir, { recursive: true });
   }
-  writeFileSync4(outputPath, JSON.stringify(serialized, null, 2));
+  writeFileSync5(outputPath, JSON.stringify(serialized, null, 2));
 }
 function loadBaseline(baselinePath) {
   if (!existsSync9(baselinePath)) return null;
@@ -12642,9 +12642,9 @@ var init_supply_chain = __esm({
 // src/index.ts
 init_scanner();
 import { Command } from "commander";
-import { resolve as resolve8 } from "path";
+import { resolve as resolve9 } from "path";
 import { dirname as dirname5 } from "path";
-import { existsSync as existsSync10, writeFileSync as writeFileSync5, appendFileSync as appendFileSync2, mkdirSync as mkdirSync5 } from "fs";
+import { existsSync as existsSync10, writeFileSync as writeFileSync6, appendFileSync as appendFileSync2, mkdirSync as mkdirSync6 } from "fs";
 
 // src/reporter/score.ts
 var SCORE_DEDUCTIONS = {
@@ -14043,6 +14043,192 @@ function normalizeUri(uri) {
   return uri.replace(/\\/g, "/");
 }
 
+// src/evidence-pack/index.ts
+import { mkdirSync, writeFileSync } from "fs";
+import { basename as basename3, resolve as resolve2 } from "path";
+import { homedir as homedir2 } from "os";
+var ARTIFACTS = [
+  {
+    file: "manifest.json",
+    kind: "manifest",
+    description: "Machine-readable inventory of evidence-pack artifacts."
+  },
+  {
+    file: "README.md",
+    kind: "readme",
+    description: "Human-readable guide to the bundle contents."
+  },
+  {
+    file: "agentshield-report.json",
+    kind: "scan-json",
+    description: "Primary AgentShield JSON security report."
+  },
+  {
+    file: "agentshield-report.html",
+    kind: "scan-html",
+    description: "Self-contained executive HTML report."
+  },
+  {
+    file: "agentshield-results.sarif",
+    kind: "sarif",
+    description: "SARIF 2.1.0 code-scanning report."
+  },
+  {
+    file: "policy-evaluation.json",
+    kind: "policy",
+    description: "Organization policy evaluation, or a not-run marker."
+  },
+  {
+    file: "baseline-comparison.json",
+    kind: "baseline",
+    description: "Baseline drift comparison, or a not-run marker."
+  },
+  {
+    file: "supply-chain.json",
+    kind: "supply-chain",
+    description: "MCP package provenance and supply-chain verification summary."
+  }
+];
+function writeEvidencePack(options) {
+  const outputDir = resolve2(options.outputDir);
+  const generatedAt = options.generatedAt ?? (/* @__PURE__ */ new Date()).toISOString();
+  const redacted = options.redact ?? true;
+  const redactor = createRedactor(options.report.targetPath, redacted);
+  const report = redactor.value(options.report);
+  const policyEvaluation = options.policyEvaluation ? redactor.value(options.policyEvaluation) : {
+    status: "not-run",
+    reason: "No --policy file was provided for this scan."
+  };
+  const baselineComparison = options.baselineComparison ? redactor.value(options.baselineComparison) : {
+    status: "not-run",
+    reason: "No --baseline file was provided for this scan."
+  };
+  const supplyChainReport = redactor.value(options.supplyChainReport);
+  const manifest = {
+    schemaVersion: 1,
+    generatedAt,
+    generator: "agentshield",
+    redacted,
+    targetPath: redactor.string(options.report.targetPath),
+    artifacts: ARTIFACTS
+  };
+  mkdirSync(outputDir, { recursive: true });
+  writeText(outputDir, "manifest.json", redactor.json(manifest));
+  writeText(outputDir, "README.md", renderReadme(manifest, options));
+  writeText(outputDir, "agentshield-report.json", renderJsonReport(report));
+  writeText(outputDir, "agentshield-report.html", renderHtmlReport(report));
+  writeText(
+    outputDir,
+    "agentshield-results.sarif",
+    renderSarifReport(report, {
+      policyEvaluation: options.policyEvaluation ? policyEvaluation : void 0,
+      policyUri: options.policyPath ? redactor.string(options.policyPath) : void 0
+    })
+  );
+  writeText(outputDir, "policy-evaluation.json", redactor.json(policyEvaluation));
+  writeText(outputDir, "baseline-comparison.json", redactor.json(baselineComparison));
+  writeText(outputDir, "supply-chain.json", redactor.json(supplyChainReport));
+  return {
+    outputDir,
+    files: ARTIFACTS.map((artifact) => artifact.file)
+  };
+}
+function writeText(outputDir, fileName, content) {
+  writeFileSync(resolve2(outputDir, fileName), content.endsWith("\n") ? content : `${content}
+`);
+}
+function renderReadme(manifest, options) {
+  const policyStatus = options.policyEvaluation ? options.policyEvaluation.passed ? "passed" : "failed" : "not run";
+  const baselineStatus = options.baselineComparison ? options.baselineComparison.isRegression ? "regressed" : "passed" : "not run";
+  return [
+    "# AgentShield Evidence Pack",
+    "",
+    `Generated: ${manifest.generatedAt}`,
+    `Target: ${manifest.targetPath}`,
+    `Redacted: ${manifest.redacted ? "yes" : "no"}`,
+    "",
+    "## Summary",
+    "",
+    `- Score: ${options.report.score.numericScore}/100 (${options.report.score.grade})`,
+    `- Findings: ${options.report.summary.totalFindings}`,
+    `- Critical: ${options.report.summary.critical}`,
+    `- High: ${options.report.summary.high}`,
+    `- Policy: ${policyStatus}`,
+    `- Baseline: ${baselineStatus}`,
+    `- Supply-chain packages: ${options.supplyChainReport.totalPackages}`,
+    `- Risky packages: ${options.supplyChainReport.riskyPackages}`,
+    "",
+    "## Artifacts",
+    "",
+    ...manifest.artifacts.map(
+      (artifact) => `- \`${artifact.file}\` (${artifact.kind}): ${artifact.description}`
+    ),
+    "",
+    "## Interpretation",
+    "",
+    "- Start with `agentshield-report.html` for an executive review.",
+    "- Use `agentshield-report.json` and `agentshield-results.sarif` for automation.",
+    "- Use `policy-evaluation.json` to confirm organization-policy status.",
+    "- Use `baseline-comparison.json` to review drift from the accepted baseline.",
+    "- Use `supply-chain.json` to review MCP package provenance and package risk.",
+    "",
+    "This bundle is designed for audit handoffs, buyer security reviews, and CI artifacts."
+  ].join("\n");
+}
+function createRedactor(targetPath, enabled) {
+  const replacements = enabled ? buildReplacements(targetPath) : [];
+  const redactString = (value) => {
+    if (!enabled) return value;
+    return replacements.reduce(
+      (redacted, [pattern, replacement]) => redacted.replace(pattern, replacement),
+      value
+    );
+  };
+  const redactValue = (value) => {
+    if (!enabled) return value;
+    return JSON.parse(redactString(JSON.stringify(value)));
+  };
+  return {
+    string: redactString,
+    value: redactValue,
+    json(value) {
+      return JSON.stringify(redactValue(value), null, 2);
+    }
+  };
+}
+function buildReplacements(targetPath) {
+  const home = homedir2();
+  const targetReplacements = targetPath ? [
+    [literalPattern(resolve2(targetPath)), "<target-path>"],
+    [literalPattern(targetPath), "<target-path>"]
+  ] : [];
+  const homeReplacements = home && home !== "/" ? [[literalPattern(home), "<home>"]] : [];
+  const userNames = [
+    basename3(home),
+    process.env.USER,
+    process.env.USERNAME
+  ].filter((value) => Boolean(value && value.length >= 3));
+  const userReplacements = [...new Set(userNames)].map((userName) => [new RegExp(`\\b${escapeRegExp(userName)}\\b`, "g"), "<user>"]);
+  const tokenReplacements = [
+    [/\bsk-[A-Za-z0-9_-]{12,}\b/g, "sk-<redacted>"],
+    [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{12,}\b/g, "gh_<redacted>"],
+    [/\b(?:xox[baprs]|slack)-[A-Za-z0-9-]{12,}\b/g, "<redacted-token>"],
+    [/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "<redacted-email>"]
+  ];
+  return [
+    ...targetReplacements,
+    ...homeReplacements,
+    ...userReplacements,
+    ...tokenReplacements
+  ];
+}
+function literalPattern(value) {
+  return new RegExp(escapeRegExp(value), "g");
+}
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // src/opus/pipeline.ts
 import Anthropic from "@anthropic-ai/sdk";
 import chalk2 from "chalk";
@@ -14760,8 +14946,8 @@ function renderInlineScore(score) {
 }
 
 // src/fixer/index.ts
-import { readFileSync as readFileSync2, writeFileSync } from "fs";
-import { resolve as resolve2 } from "path";
+import { readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "fs";
+import { resolve as resolve3 } from "path";
 
 // src/fixer/transforms.ts
 function replaceHardcodedSecret(content, finding) {
@@ -14841,7 +15027,7 @@ function applyFixes(scanResult) {
   const applied = [];
   const skipped = [];
   for (const [relPath, findings] of grouped) {
-    const filePath = resolve2(scanResult.target.path, relPath);
+    const filePath = resolve3(scanResult.target.path, relPath);
     let content;
     try {
       content = readFileSync2(filePath, "utf-8");
@@ -14884,7 +15070,7 @@ function applyFixes(scanResult) {
       }
     }
     if (fileModified) {
-      writeFileSync(filePath, updatedContent, "utf-8");
+      writeFileSync2(filePath, updatedContent, "utf-8");
     }
   }
   return {
@@ -14929,8 +15115,8 @@ function renderFixSummary(result) {
 }
 
 // src/init/index.ts
-import { existsSync as existsSync2, mkdirSync, writeFileSync as writeFileSync2 } from "fs";
-import { join as join3, resolve as resolve3 } from "path";
+import { existsSync as existsSync2, mkdirSync as mkdirSync2, writeFileSync as writeFileSync3 } from "fs";
+import { join as join3, resolve as resolve4 } from "path";
 function getDefaultSettings() {
   const settings = {
     permissions: {
@@ -15038,17 +15224,17 @@ function safeWriteFile(filePath, content) {
       reason: "File already exists"
     };
   }
-  writeFileSync2(filePath, content, "utf-8");
+  writeFileSync3(filePath, content, "utf-8");
   return {
     path: filePath,
     status: "created"
   };
 }
 function runInit(targetDir) {
-  const baseDir = targetDir ? resolve3(targetDir) : resolve3(process.cwd());
+  const baseDir = targetDir ? resolve4(targetDir) : resolve4(process.cwd());
   const claudeDir = join3(baseDir, ".claude");
   if (!existsSync2(claudeDir)) {
-    mkdirSync(claudeDir, { recursive: true });
+    mkdirSync2(claudeDir, { recursive: true });
   }
   const files = [];
   files.push(
@@ -15142,7 +15328,7 @@ var DEFAULT_SERVER_CONFIG = {
 
 // src/miniclaw/sandbox.ts
 import { mkdir, rm, stat, realpath, access } from "fs/promises";
-import { join as join4, resolve as resolve4, relative as relative2, extname as extname3 } from "path";
+import { join as join4, resolve as resolve5, relative as relative2, extname as extname3 } from "path";
 import { randomUUID } from "crypto";
 async function createSandbox(config = DEFAULT_SANDBOX_CONFIG, allowedTools = [], maxDuration) {
   const sessionId = randomUUID();
@@ -15159,8 +15345,8 @@ async function createSandbox(config = DEFAULT_SANDBOX_CONFIG, allowedTools = [],
   return session;
 }
 async function destroySandbox(sandboxPath, rootPath) {
-  const normalizedSandbox = resolve4(sandboxPath);
-  const normalizedRoot = resolve4(rootPath);
+  const normalizedSandbox = resolve5(sandboxPath);
+  const normalizedRoot = resolve5(rootPath);
   if (!normalizedSandbox.startsWith(normalizedRoot + "/")) {
     return {
       success: false,
@@ -15512,7 +15698,7 @@ function checkRateLimit(ip, maxRequests) {
   return true;
 }
 function readBody(req, maxSize) {
-  return new Promise((resolve9, reject) => {
+  return new Promise((resolve10, reject) => {
     const chunks = [];
     let totalSize = 0;
     req.on("data", (chunk) => {
@@ -15525,7 +15711,7 @@ function readBody(req, maxSize) {
       chunks.push(chunk);
     });
     req.on("end", () => {
-      resolve9(Buffer.concat(chunks).toString("utf-8"));
+      resolve10(Buffer.concat(chunks).toString("utf-8"));
     });
     req.on("error", (err) => {
       reject(err);
@@ -15741,7 +15927,7 @@ function startMiniClaw(config) {
 // src/watch/watcher.ts
 init_scanner();
 import { watch, existsSync as existsSync3, readdirSync as readdirSync2, statSync as statSync3 } from "fs";
-import { resolve as resolve5 } from "path";
+import { resolve as resolve6 } from "path";
 
 // src/watch/diff.ts
 function fingerprintFinding(finding) {
@@ -15890,7 +16076,7 @@ function startWatcher(config) {
     scanCount = 1;
   }
   for (const watchPath of config.paths) {
-    const resolvedPath = resolve5(watchPath);
+    const resolvedPath = resolve6(watchPath);
     if (!existsSync3(resolvedPath)) continue;
     const isDir = statSync3(resolvedPath).isDirectory();
     if (!isDir) continue;
@@ -15973,7 +16159,7 @@ function collectWatchDirectories(rootPath) {
       if (!entry.isDirectory()) {
         continue;
       }
-      const childPath = resolve5(currentPath, entry.name);
+      const childPath = resolve6(currentPath, entry.name);
       directories.push(childPath);
       queue.push(childPath);
     }
@@ -16034,7 +16220,7 @@ async function handleChange(config, currentBaseline, onResult) {
 
 // src/runtime/policy.ts
 import { readFileSync as readFileSync3, existsSync as existsSync4 } from "fs";
-import { resolve as resolve6 } from "path";
+import { resolve as resolve7 } from "path";
 
 // src/runtime/types.ts
 import { z } from "zod";
@@ -16086,18 +16272,18 @@ function generateDefaultPolicy() {
 }
 
 // src/runtime/evaluator.ts
-import { appendFileSync, existsSync as existsSync5, mkdirSync as mkdirSync2 } from "fs";
+import { appendFileSync, existsSync as existsSync5, mkdirSync as mkdirSync3 } from "fs";
 import { dirname as dirname2 } from "path";
 
 // src/runtime/install.ts
-import { readFileSync as readFileSync5, writeFileSync as writeFileSync3, existsSync as existsSync7, mkdirSync as mkdirSync3, renameSync } from "fs";
+import { readFileSync as readFileSync5, writeFileSync as writeFileSync4, existsSync as existsSync7, mkdirSync as mkdirSync4, renameSync } from "fs";
 import { join as join6, dirname as dirname3 } from "path";
 
 // src/runtime/status.ts
 import { existsSync as existsSync6, readFileSync as readFileSync4 } from "fs";
-import { join as join5, resolve as resolve7 } from "path";
+import { join as join5, resolve as resolve8 } from "path";
 function defaultLogPath(targetPath) {
-  return resolve7(targetPath, ".agentshield", "runtime.ndjson");
+  return resolve8(targetPath, ".agentshield", "runtime.ndjson");
 }
 function runtimePolicyPath(targetPath) {
   return join5(targetPath, ".agentshield", "runtime-policy.json");
@@ -16136,7 +16322,7 @@ function getRuntimeStatus(targetPath) {
       if (result.success) {
         policyValid = true;
         const configuredLogPath = result.data.log?.path ?? ".agentshield/runtime.ndjson";
-        logPath = resolve7(targetPath, configuredLogPath);
+        logPath = resolve8(targetPath, configuredLogPath);
       }
     } catch {
       policyValid = false;
@@ -16250,11 +16436,11 @@ function installRuntimeAtPath(targetPath, settingsPath) {
   const policyPath = runtimePolicyPath2(targetPath);
   const policyDir = dirname3(policyPath);
   if (!existsSync7(policyDir)) {
-    mkdirSync3(policyDir, { recursive: true });
+    mkdirSync4(policyDir, { recursive: true });
   }
   let policyCreated = false;
   if (!existsSync7(policyPath)) {
-    writeFileSync3(policyPath, generateDefaultPolicy());
+    writeFileSync4(policyPath, generateDefaultPolicy());
     policyCreated = true;
   }
   const settingsState = readSettingsFile(settingsPath);
@@ -16287,9 +16473,9 @@ function installRuntimeAtPath(targetPath, settingsPath) {
   const updatedSettings = { ...settings, hooks: updatedHooks };
   const dir = dirname3(settingsPath);
   if (!existsSync7(dir)) {
-    mkdirSync3(dir, { recursive: true });
+    mkdirSync4(dir, { recursive: true });
   }
-  writeFileSync3(settingsPath, JSON.stringify(updatedSettings, null, 2));
+  writeFileSync4(settingsPath, JSON.stringify(updatedSettings, null, 2));
   return {
     hookInstalled: true,
     policyCreated,
@@ -16331,14 +16517,14 @@ function repairRuntime(targetPath) {
   if (settingsState.exists && !settingsState.valid) {
     const dir = dirname3(settingsPath);
     if (!existsSync7(dir)) {
-      mkdirSync3(dir, { recursive: true });
+      mkdirSync4(dir, { recursive: true });
     }
     settingsBackupPath = backupFile(settingsPath);
   }
   if (existsSync7(policyPath) && !hasValidRuntimePolicy(policyPath)) {
     const policyDir = dirname3(policyPath);
     if (!existsSync7(policyDir)) {
-      mkdirSync3(policyDir, { recursive: true });
+      mkdirSync4(policyDir, { recursive: true });
     }
     policyBackupPath = backupFile(policyPath);
   }
@@ -16383,7 +16569,7 @@ function uninstallRuntime(targetPath) {
   }
   const updatedHooks = { ...hooks, PreToolUse: filtered };
   const updatedSettings = { ...settings, hooks: updatedHooks };
-  writeFileSync3(settingsPath, JSON.stringify(updatedSettings, null, 2));
+  writeFileSync4(settingsPath, JSON.stringify(updatedSettings, null, 2));
   return { removed: true, message: "AgentShield runtime hook removed." };
 }
 function resolveSettingsPath(targetPath) {
@@ -16510,7 +16696,7 @@ function createScanLogger(logPath, logFormat) {
     },
     flush() {
       if (logPath && logFormat === "json") {
-        writeFileSync5(logPath, JSON.stringify(entries, null, 2));
+        writeFileSync6(logPath, JSON.stringify(entries, null, 2));
       }
     }
   };
@@ -16523,9 +16709,9 @@ function emitReportOutput(output, outputPath) {
     console.log(output);
     return;
   }
-  const resolvedOutput = resolve8(outputPath);
-  mkdirSync5(dirname5(resolvedOutput), { recursive: true });
-  writeFileSync5(resolvedOutput, output);
+  const resolvedOutput = resolve9(outputPath);
+  mkdirSync6(dirname5(resolvedOutput), { recursive: true });
+  writeFileSync6(resolvedOutput, output);
   console.log(`Report written to: ${resolvedOutput}`);
 }
 function collectOption(value, previous) {
@@ -16541,7 +16727,24 @@ function filterFindingsByMinSeverity(findings, minSeverity) {
 function validateMinSeverity(minSeverity) {
   return severityIndex(minSeverity) >= 0;
 }
-program.command("scan").description("Scan a Claude Code configuration directory for security issues").option("-p, --path <path>", "Path to scan (default: ~/.claude or current dir)").option("-f, --format <format>", "Output format: terminal, json, markdown, html, sarif", "terminal").option("-o, --output <path>", "Write the primary report output to a file").option("--fix", "Auto-apply safe fixes", false).option("--opus", "Enable Opus 4.6 multi-agent deep analysis", false).option("--stream", "Stream Opus analysis in real-time", false).option("--injection", "Run active prompt injection testing against the config", false).option("--sandbox", "Execute hooks in sandbox and observe behavior", false).option("--taint", "Run taint analysis (data flow tracking)", false).option("--deep", "Run ALL analysis (injection + sandbox + taint + opus)", false).option("--log <path>", "Write structured scan log to file").option("--log-format <format>", "Log format: ndjson (default) or json", "ndjson").option("--corpus", "Run scanner validation against built-in attack corpus", false).option("--baseline <path>", "Compare against a baseline file and report regressions").option("--save-baseline <path>", "Save current scan results as a baseline file").option("--gate", "Fail if new critical/high findings or score drops (use with --baseline)", false).option("--supply-chain", "Verify MCP npm packages against known-bad list and typosquatting", false).option("--supply-chain-online", "Also query npm registry for metadata (requires network)", false).option("--policy <path>", "Validate against an organization policy file").option("--min-severity <severity>", "Minimum severity to report: critical, high, medium, low, info", "info").option("-v, --verbose", "Show detailed output", false).action(async (options) => {
+function emptySupplyChainReport() {
+  return {
+    packages: [],
+    totalPackages: 0,
+    riskyPackages: 0,
+    criticalCount: 0,
+    highCount: 0,
+    provenance: {
+      npmPackages: 0,
+      gitPackages: 0,
+      pinnedPackages: 0,
+      unpinnedPackages: 0,
+      knownGoodPackages: 0,
+      registryMetadataPackages: 0
+    }
+  };
+}
+program.command("scan").description("Scan a Claude Code configuration directory for security issues").option("-p, --path <path>", "Path to scan (default: ~/.claude or current dir)").option("-f, --format <format>", "Output format: terminal, json, markdown, html, sarif", "terminal").option("-o, --output <path>", "Write the primary report output to a file").option("--fix", "Auto-apply safe fixes", false).option("--opus", "Enable Opus 4.6 multi-agent deep analysis", false).option("--stream", "Stream Opus analysis in real-time", false).option("--injection", "Run active prompt injection testing against the config", false).option("--sandbox", "Execute hooks in sandbox and observe behavior", false).option("--taint", "Run taint analysis (data flow tracking)", false).option("--deep", "Run ALL analysis (injection + sandbox + taint + opus)", false).option("--log <path>", "Write structured scan log to file").option("--log-format <format>", "Log format: ndjson (default) or json", "ndjson").option("--corpus", "Run scanner validation against built-in attack corpus", false).option("--baseline <path>", "Compare against a baseline file and report regressions").option("--save-baseline <path>", "Save current scan results as a baseline file").option("--gate", "Fail if new critical/high findings or score drops (use with --baseline)", false).option("--supply-chain", "Verify MCP npm packages against known-bad list and typosquatting", false).option("--supply-chain-online", "Also query npm registry for metadata (requires network)", false).option("--policy <path>", "Validate against an organization policy file").option("--evidence-pack <dir>", "Write a portable evidence bundle for audits and security reviews").option("--no-evidence-redact", "Disable evidence-pack redaction of local paths, usernames, emails, and token-shaped strings").option("--min-severity <severity>", "Minimum severity to report: critical, high, medium, low, info", "info").option("-v, --verbose", "Show detailed output", false).action(async (options) => {
   const targetPath = resolveTargetPath(options.path);
   if (!existsSync10(targetPath)) {
     console.error(`Error: Path does not exist: ${targetPath}`);
@@ -16568,6 +16771,8 @@ program.command("scan").description("Scan a Claude Code configuration directory 
   });
   let policyEvaluation = null;
   let policyExitCode = 0;
+  let baselineComparison = null;
+  let supplyChainReport = null;
   const machineReportToStdout = !options.output && (options.format === "json" || options.format === "sarif");
   const writePolicyOutput = (message) => {
     if (machineReportToStdout) {
@@ -16581,7 +16786,7 @@ program.command("scan").description("Scan a Claude Code configuration directory 
     logger.log({ level: "info", phase: "policy", message: "Validating against organization policy" });
     try {
       const { loadPolicy: loadOrgPolicy, evaluatePolicy: evaluatePolicy2, renderPolicyEvaluation: renderPolicyEvaluation2 } = await Promise.resolve().then(() => (init_policy(), policy_exports));
-      const policyResult = loadOrgPolicy(resolve8(options.policy));
+      const policyResult = loadOrgPolicy(resolve9(options.policy));
       if (!policyResult.success) {
         console.error(`
   Error: ${policyResult.error}
@@ -16652,21 +16857,69 @@ program.command("scan").description("Scan a Claude Code configuration directory 
   Error: Could not load baseline from ${options.baseline}
 `);
     } else {
-      const comparison = compareBaseline2(baseline2, filteredResult.findings, report.score);
-      writeAuxiliaryOutput(renderComparison2(comparison));
+      baselineComparison = compareBaseline2(baseline2, filteredResult.findings, report.score);
+      writeAuxiliaryOutput(renderComparison2(baselineComparison));
       logger.log({
-        level: comparison.isRegression ? "warn" : "info",
+        level: baselineComparison.isRegression ? "warn" : "info",
         phase: "baseline",
-        message: `Baseline comparison: ${comparison.newFindings.length} new, ${comparison.resolvedFindings.length} resolved, score delta ${comparison.scoreDelta}`
+        message: `Baseline comparison: ${baselineComparison.newFindings.length} new, ${baselineComparison.resolvedFindings.length} resolved, score delta ${baselineComparison.scoreDelta}`
       });
       if (options.gate) {
-        const gateResult = evaluateGate2(comparison);
+        const gateResult = evaluateGate2(baselineComparison);
         writeAuxiliaryOutput(renderGateResult2(gateResult));
         if (!gateResult.passed) {
           logger.log({ level: "error", phase: "gate", message: `Gate FAILED: ${gateResult.reasons.join("; ")}` });
           process.exit(3);
         }
       }
+    }
+  }
+  if (options.supplyChain || options.supplyChainOnline || options.evidencePack) {
+    logger.log({ level: "info", phase: "supply-chain", message: "Running supply chain verification" });
+    try {
+      const { extractPackages: extractPackages2, verifyPackages: verifyPackages2, renderSupplyChainReport: renderSupplyChainReport2 } = await Promise.resolve().then(() => (init_supply_chain(), supply_chain_exports));
+      const packages = extractPackages2(result.target.files);
+      supplyChainReport = await verifyPackages2(packages, {
+        online: options.supplyChainOnline
+      });
+      if ((options.supplyChain || options.supplyChainOnline) && options.format === "terminal") {
+        console.log(renderSupplyChainReport2(supplyChainReport));
+      }
+      logger.log({
+        level: supplyChainReport.criticalCount > 0 ? "error" : supplyChainReport.highCount > 0 ? "warn" : "info",
+        phase: "supply-chain",
+        message: `Supply chain: ${supplyChainReport.riskyPackages}/${supplyChainReport.totalPackages} risky packages`
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`  Supply chain verification failed: ${message}`);
+      logger.log({ level: "error", phase: "supply-chain", message: `Failed: ${message}` });
+      process.exit(5);
+    }
+  }
+  if (options.evidencePack) {
+    try {
+      const pack = writeEvidencePack({
+        outputDir: options.evidencePack,
+        report,
+        policyEvaluation: policyEvaluation ?? void 0,
+        policyPath: options.policy,
+        baselineComparison: baselineComparison ?? void 0,
+        baselinePath: options.baseline,
+        supplyChainReport: supplyChainReport ?? emptySupplyChainReport(),
+        redact: options.evidenceRedact
+      });
+      writeAuxiliaryOutput(`
+  Evidence pack written to: ${pack.outputDir}
+`);
+      logger.log({ level: "info", phase: "evidence-pack", message: `Evidence pack written to ${pack.outputDir}` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeAuxiliaryOutput(`
+  Error: Failed to write evidence pack: ${message}
+`);
+      logger.log({ level: "error", phase: "evidence-pack", message: `Failed to write evidence pack: ${message}` });
+      process.exit(1);
     }
   }
   if (policyExitCode > 0) {
@@ -16764,28 +17017,6 @@ Opus analysis failed: ${message}`);
       });
     }
   }
-  if (options.supplyChain || options.supplyChainOnline) {
-    logger.log({ level: "info", phase: "supply-chain", message: "Running supply chain verification" });
-    try {
-      const { extractPackages: extractPackages2, verifyPackages: verifyPackages2, renderSupplyChainReport: renderSupplyChainReport2 } = await Promise.resolve().then(() => (init_supply_chain(), supply_chain_exports));
-      const packages = extractPackages2(result.target.files);
-      const scReport = await verifyPackages2(packages, {
-        online: options.supplyChainOnline
-      });
-      if (options.format === "terminal") {
-        console.log(renderSupplyChainReport2(scReport));
-      }
-      logger.log({
-        level: scReport.criticalCount > 0 ? "error" : scReport.highCount > 0 ? "warn" : "info",
-        phase: "supply-chain",
-        message: `Supply chain: ${scReport.riskyPackages}/${scReport.totalPackages} risky packages`
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`  Supply chain verification failed: ${message}`);
-      logger.log({ level: "error", phase: "supply-chain", message: `Failed: ${message}` });
-    }
-  }
   if (options.deep) {
     const { renderDeepScanSummary: renderDeepScanSummary2 } = await Promise.resolve().then(() => (init_terminal(), terminal_exports));
     const deepResult = {
@@ -16834,7 +17065,7 @@ baseline.command("write").description("Scan a target and write the current findi
     findings: filterFindingsByMinSeverity(result.findings, options.minSeverity)
   };
   const report = calculateScore(filteredResult);
-  const outputPath = resolve8(options.output);
+  const outputPath = resolve9(options.output);
   saveBaseline2(filteredResult.findings, report.score, outputPath);
   const metadata = {
     baselinePath: outputPath,
@@ -16893,7 +17124,7 @@ program.command("watch").description("Continuously monitor config directories fo
   }
   console.log(`
   Performing initial scan to establish baseline...`);
-  const homeClaude = resolve8(
+  const homeClaude = resolve9(
     process.env.HOME ?? process.env.USERPROFILE ?? ".",
     ".claude"
   );
@@ -16938,7 +17169,7 @@ program.command("watch").description("Continuously monitor config directories fo
 });
 var runtime = program.command("runtime").description("Runtime monitoring \u2014 PreToolUse hook for policy enforcement");
 runtime.command("install").description("Install the AgentShield PreToolUse hook into settings.json").option("-p, --path <path>", "Target directory (default: current directory)", ".").action((options) => {
-  const result = installRuntime(resolve8(options.path));
+  const result = installRuntime(resolve9(options.path));
   console.log(`
   AgentShield Runtime Monitor
 `);
@@ -16954,7 +17185,7 @@ runtime.command("install").description("Install the AgentShield PreToolUse hook 
   console.log();
 });
 runtime.command("uninstall").description("Remove the AgentShield PreToolUse hook from settings.json").option("-p, --path <path>", "Target directory (default: current directory)", ".").action((options) => {
-  const result = uninstallRuntime(resolve8(options.path));
+  const result = uninstallRuntime(resolve9(options.path));
   console.log(`
   AgentShield Runtime Monitor
 `);
@@ -16962,7 +17193,7 @@ runtime.command("uninstall").description("Remove the AgentShield PreToolUse hook
 `);
 });
 runtime.command("status").description("Inspect runtime hook, policy, and logging readiness").option("-p, --path <path>", "Target directory (default: current directory)", ".").option("--json", "Output status as JSON", false).option("--check", "Exit non-zero when runtime monitor is not ready", false).action((options) => {
-  const result = getRuntimeStatus(resolve8(options.path));
+  const result = getRuntimeStatus(resolve9(options.path));
   if (options.json) {
     console.log(JSON.stringify(result, null, 2));
   } else {
@@ -16988,8 +17219,8 @@ runtime.command("status").description("Inspect runtime hook, policy, and logging
   }
 });
 runtime.command("repair").description("Back up invalid runtime files and restore a healthy monitor install").option("-p, --path <path>", "Target directory (default: current directory)", ".").action((options) => {
-  const result = repairRuntime(resolve8(options.path));
-  const status = getRuntimeStatus(resolve8(options.path));
+  const result = repairRuntime(resolve9(options.path));
+  const status = getRuntimeStatus(resolve9(options.path));
   console.log(`
   AgentShield Runtime Monitor
 `);
@@ -17011,7 +17242,7 @@ runtime.command("repair").description("Back up invalid runtime files and restore
 var policyCmd = program.command("policy").description("Organization-wide security policy management");
 policyCmd.command("init").description("Generate an example organization policy file").option("-o, --output <path>", "Output path", ".agentshield/policy.json").option("--pack <pack>", "Policy pack preset: oss, team, enterprise, regulated, high-risk-hooks-mcp, ci-enforcement", "enterprise").option("--owner <owner>", "Policy owner identifier; repeat for multiple owners", collectOption, []).option("--name <name>", "Policy display name").action(async (options) => {
   const { generateExamplePolicy: generateExamplePolicy2, listPolicyPacks: listPolicyPacks2, PolicyPackSchema: PolicyPackSchema2 } = await Promise.resolve().then(() => (init_policy(), policy_exports));
-  const outputPath = resolve8(options.output);
+  const outputPath = resolve9(options.output);
   const packResult = PolicyPackSchema2.safeParse(options.pack);
   if (existsSync10(outputPath)) {
     console.error(`
@@ -17026,11 +17257,11 @@ policyCmd.command("init").description("Generate an example organization policy f
 `);
     process.exit(1);
   }
-  const dir = resolve8(outputPath, "..");
+  const dir = resolve9(outputPath, "..");
   if (!existsSync10(dir)) {
-    mkdirSync5(dir, { recursive: true });
+    mkdirSync6(dir, { recursive: true });
   }
-  writeFileSync5(outputPath, generateExamplePolicy2(packResult.data, {
+  writeFileSync6(outputPath, generateExamplePolicy2(packResult.data, {
     name: options.name,
     owners: options.owner
   }));
@@ -17132,13 +17363,13 @@ miniclaw.command("start").description("Start the MiniClaw server").option("-p, -
 program.parse();
 function resolveTargetPath(pathArg) {
   if (pathArg) {
-    return resolve8(pathArg);
+    return resolve9(pathArg);
   }
-  const localClaude = resolve8(process.cwd(), ".claude");
+  const localClaude = resolve9(process.cwd(), ".claude");
   if (existsSync10(localClaude)) {
     return localClaude;
   }
-  const homeClaude = resolve8(
+  const homeClaude = resolve9(
     process.env.HOME ?? process.env.USERPROFILE ?? ".",
     ".claude"
   );

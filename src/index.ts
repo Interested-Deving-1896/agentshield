@@ -10,6 +10,7 @@ import { renderTerminalReport } from "./reporter/terminal.js";
 import { renderJsonReport, renderMarkdownReport } from "./reporter/json.js";
 import { renderHtmlReport } from "./reporter/html.js";
 import { renderSarifReport } from "./reporter/sarif.js";
+import { writeEvidencePack } from "./evidence-pack/index.js";
 import { runOpusPipeline, renderOpusAnalysis } from "./opus/index.js";
 import { applyFixes, renderFixSummary } from "./fixer/index.js";
 import { runInit, renderInitSummary } from "./init/index.js";
@@ -17,6 +18,8 @@ import { startMiniClaw } from "./miniclaw/index.js";
 import { startWatcher } from "./watch/index.js";
 import type { AlertMode } from "./watch/types.js";
 import { getRuntimeStatus, installRuntime, repairRuntime, uninstallRuntime } from "./runtime/index.js";
+import type { BaselineComparison } from "./baseline/index.js";
+import type { SupplyChainReport } from "./supply-chain/index.js";
 import type {
   InjectionSuiteResult,
   SandboxResult,
@@ -235,6 +238,24 @@ function validateMinSeverity(minSeverity: string): boolean {
   return severityIndex(minSeverity) >= 0;
 }
 
+function emptySupplyChainReport(): SupplyChainReport {
+  return {
+    packages: [],
+    totalPackages: 0,
+    riskyPackages: 0,
+    criticalCount: 0,
+    highCount: 0,
+    provenance: {
+      npmPackages: 0,
+      gitPackages: 0,
+      pinnedPackages: 0,
+      unpinnedPackages: 0,
+      knownGoodPackages: 0,
+      registryMetadataPackages: 0,
+    },
+  };
+}
+
 program
   .command("scan")
   .description("Scan a Claude Code configuration directory for security issues")
@@ -257,6 +278,8 @@ program
   .option("--supply-chain", "Verify MCP npm packages against known-bad list and typosquatting", false)
   .option("--supply-chain-online", "Also query npm registry for metadata (requires network)", false)
   .option("--policy <path>", "Validate against an organization policy file")
+  .option("--evidence-pack <dir>", "Write a portable evidence bundle for audits and security reviews")
+  .option("--no-evidence-redact", "Disable evidence-pack redaction of local paths, usernames, emails, and token-shaped strings")
   .option("--min-severity <severity>", "Minimum severity to report: critical, high, medium, low, info", "info")
   .option("-v, --verbose", "Show detailed output", false)
   .action(async (options) => {
@@ -298,6 +321,8 @@ program
 
     let policyEvaluation: PolicyEvaluation | null = null;
     let policyExitCode = 0;
+    let baselineComparison: BaselineComparison | null = null;
+    let supplyChainReport: SupplyChainReport | null = null;
     const machineReportToStdout =
       !options.output && (options.format === "json" || options.format === "sarif");
     const writePolicyOutput = (message: string): void => {
@@ -387,22 +412,71 @@ program
       if (!baseline) {
         console.error(`\n  Error: Could not load baseline from ${options.baseline}\n`);
       } else {
-        const comparison = compareBaseline(baseline, filteredResult.findings, report.score);
-        writeAuxiliaryOutput(renderComparison(comparison));
+        baselineComparison = compareBaseline(baseline, filteredResult.findings, report.score);
+        writeAuxiliaryOutput(renderComparison(baselineComparison));
         logger.log({
-          level: comparison.isRegression ? "warn" : "info",
+          level: baselineComparison.isRegression ? "warn" : "info",
           phase: "baseline",
-          message: `Baseline comparison: ${comparison.newFindings.length} new, ${comparison.resolvedFindings.length} resolved, score delta ${comparison.scoreDelta}`,
+          message: `Baseline comparison: ${baselineComparison.newFindings.length} new, ${baselineComparison.resolvedFindings.length} resolved, score delta ${baselineComparison.scoreDelta}`,
         });
 
         if (options.gate) {
-          const gateResult = evaluateGate(comparison);
+          const gateResult = evaluateGate(baselineComparison);
           writeAuxiliaryOutput(renderGateResult(gateResult));
           if (!gateResult.passed) {
             logger.log({ level: "error", phase: "gate", message: `Gate FAILED: ${gateResult.reasons.join("; ")}` });
             process.exit(3);
           }
         }
+      }
+    }
+
+    // ── Phase 1d: Supply-chain evidence ───────────────────
+    if (options.supplyChain || options.supplyChainOnline || options.evidencePack) {
+      logger.log({ level: "info", phase: "supply-chain", message: "Running supply chain verification" });
+      try {
+        const { extractPackages, verifyPackages, renderSupplyChainReport } =
+          await import("./supply-chain/index.js");
+        const packages = extractPackages(result.target.files);
+        supplyChainReport = await verifyPackages(packages, {
+          online: options.supplyChainOnline,
+        });
+        if ((options.supplyChain || options.supplyChainOnline) && options.format === "terminal") {
+          // Preserve machine-readable stdout for json/markdown/html scans.
+          console.log(renderSupplyChainReport(supplyChainReport));
+        }
+        logger.log({
+          level: supplyChainReport.criticalCount > 0 ? "error" : supplyChainReport.highCount > 0 ? "warn" : "info",
+          phase: "supply-chain",
+          message: `Supply chain: ${supplyChainReport.riskyPackages}/${supplyChainReport.totalPackages} risky packages`,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`  Supply chain verification failed: ${message}`);
+        logger.log({ level: "error", phase: "supply-chain", message: `Failed: ${message}` });
+        process.exit(5);
+      }
+    }
+
+    if (options.evidencePack) {
+      try {
+        const pack = writeEvidencePack({
+          outputDir: options.evidencePack,
+          report,
+          policyEvaluation: policyEvaluation ?? undefined,
+          policyPath: options.policy,
+          baselineComparison: baselineComparison ?? undefined,
+          baselinePath: options.baseline,
+          supplyChainReport: supplyChainReport ?? emptySupplyChainReport(),
+          redact: options.evidenceRedact,
+        });
+        writeAuxiliaryOutput(`\n  Evidence pack written to: ${pack.outputDir}\n`);
+        logger.log({ level: "info", phase: "evidence-pack", message: `Evidence pack written to ${pack.outputDir}` });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        writeAuxiliaryOutput(`\n  Error: Failed to write evidence pack: ${message}\n`);
+        logger.log({ level: "error", phase: "evidence-pack", message: `Failed to write evidence pack: ${message}` });
+        process.exit(1);
       }
     }
 
@@ -512,32 +586,6 @@ program
           phase: "corpus",
           message: `Corpus: ${corpusResult.detected}/${corpusResult.totalAttacks} detected (${(corpusResult.detectionRate * 100).toFixed(1)}%)`,
         });
-      }
-    }
-
-    // ── Phase 8: Supply chain verification ─────────────────
-    if (options.supplyChain || options.supplyChainOnline) {
-      logger.log({ level: "info", phase: "supply-chain", message: "Running supply chain verification" });
-      try {
-        const { extractPackages, verifyPackages, renderSupplyChainReport } =
-          await import("./supply-chain/index.js");
-        const packages = extractPackages(result.target.files);
-        const scReport = await verifyPackages(packages, {
-          online: options.supplyChainOnline,
-        });
-        if (options.format === "terminal") {
-          // Preserve machine-readable stdout for json/markdown/html scans.
-          console.log(renderSupplyChainReport(scReport));
-        }
-        logger.log({
-          level: scReport.criticalCount > 0 ? "error" : scReport.highCount > 0 ? "warn" : "info",
-          phase: "supply-chain",
-          message: `Supply chain: ${scReport.riskyPackages}/${scReport.totalPackages} risky packages`,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`  Supply chain verification failed: ${message}`);
-        logger.log({ level: "error", phase: "supply-chain", message: `Failed: ${message}` });
       }
     }
 
