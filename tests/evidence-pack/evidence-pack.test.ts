@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { writeEvidencePack } from "../../src/evidence-pack/index.js";
+import { join, resolve } from "node:path";
+import { verifyEvidencePack, writeEvidencePack } from "../../src/evidence-pack/index.js";
 import type { BaselineComparison } from "../../src/baseline/index.js";
 import type { PolicyEvaluation } from "../../src/policy/index.js";
 import type { SupplyChainReport } from "../../src/supply-chain/index.js";
 import type { SecurityReport } from "../../src/types.js";
+
+const CLI_PATH = resolve(import.meta.dirname, "../../dist/index.js");
 
 function makeReport(targetPath: string): SecurityReport {
   return {
@@ -296,5 +299,114 @@ describe("writeEvidencePack", () => {
     expect(policy).toMatchObject({ status: "not-run" });
     expect(baseline).toMatchObject({ status: "not-run" });
     expect(report.targetPath).toBe(targetPath);
+  });
+
+  it("verifies a complete evidence pack", () => {
+    const targetPath = mkdtempSync(join(tmpdir(), "agentshield-verify-target-"));
+    const outputDir = mkdtempSync(join(tmpdir(), "agentshield-evidence-pack-"));
+
+    writeEvidencePack({
+      outputDir,
+      report: makeReport(targetPath),
+      policyEvaluation: makePolicyEvaluation(),
+      baselineComparison: makeBaselineComparison(targetPath),
+      supplyChainReport: makeSupplyChainReport(),
+      generatedAt: "2026-05-13T05:02:00.000Z",
+    });
+
+    const result = verifyEvidencePack(outputDir);
+
+    expect(result.ok).toBe(true);
+    expect(result.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          file: "agentshield-report.json",
+          ok: true,
+        }),
+        expect.objectContaining({
+          file: "remediation-plan.json",
+          ok: true,
+        }),
+      ])
+    );
+    expect(result.bundleDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("detects tampered evidence-pack artifacts", () => {
+    const targetPath = mkdtempSync(join(tmpdir(), "agentshield-tamper-target-"));
+    const outputDir = mkdtempSync(join(tmpdir(), "agentshield-evidence-pack-"));
+
+    writeEvidencePack({
+      outputDir,
+      report: makeReport(targetPath),
+      supplyChainReport: makeSupplyChainReport(),
+      generatedAt: "2026-05-13T05:03:00.000Z",
+    });
+    writeFileSync(join(outputDir, "remediation-plan.json"), "{}\n");
+
+    const result = verifyEvidencePack(outputDir);
+
+    expect(result.ok).toBe(false);
+    expect(result.artifacts.find((artifact) => artifact.file === "remediation-plan.json")).toMatchObject({
+      file: "remediation-plan.json",
+      ok: false,
+      actualBytes: 3,
+    });
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("remediation-plan.json"),
+        expect.stringContaining("bundle digest"),
+      ])
+    );
+  });
+
+  it("exposes evidence-pack verification through the CLI", () => {
+    const targetPath = mkdtempSync(join(tmpdir(), "agentshield-cli-verify-target-"));
+    const outputDir = mkdtempSync(join(tmpdir(), "agentshield-evidence-pack-"));
+
+    writeEvidencePack({
+      outputDir,
+      report: makeReport(targetPath),
+      supplyChainReport: makeSupplyChainReport(),
+      generatedAt: "2026-05-13T05:04:00.000Z",
+    });
+
+    const valid = spawnSync(process.execPath, [
+      CLI_PATH,
+      "evidence-pack",
+      "verify",
+      outputDir,
+    ], {
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        NODE_NO_WARNINGS: "1",
+      },
+    });
+
+    expect(valid.status).toBe(0);
+    expect(valid.stdout).toContain("Status:    passed");
+
+    writeFileSync(join(outputDir, "agentshield-report.json"), "{}\n");
+    const invalid = spawnSync(process.execPath, [
+      CLI_PATH,
+      "evidence-pack",
+      "verify",
+      outputDir,
+      "--json",
+    ], {
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        NODE_NO_WARNINGS: "1",
+      },
+    });
+
+    expect(invalid.status).toBe(6);
+    expect(JSON.parse(invalid.stdout)).toMatchObject({
+      ok: false,
+      errors: expect.arrayContaining([expect.stringContaining("agentshield-report.json")]),
+    });
   });
 });

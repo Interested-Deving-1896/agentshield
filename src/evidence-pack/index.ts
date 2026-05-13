@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { homedir } from "node:os";
 import type { BaselineComparison } from "../baseline/index.js";
@@ -26,6 +26,24 @@ export interface EvidencePackOptions {
 export interface EvidencePackResult {
   readonly outputDir: string;
   readonly files: ReadonlyArray<string>;
+}
+
+export interface EvidencePackVerificationArtifact {
+  readonly file: string;
+  readonly ok: boolean;
+  readonly expectedSha256: string | null;
+  readonly actualSha256: string | null;
+  readonly expectedBytes: number | null;
+  readonly actualBytes: number | null;
+}
+
+export interface EvidencePackVerificationResult {
+  readonly ok: boolean;
+  readonly outputDir: string;
+  readonly bundleDigest: string | null;
+  readonly expectedBundleDigest: string | null;
+  readonly artifacts: ReadonlyArray<EvidencePackVerificationArtifact>;
+  readonly errors: ReadonlyArray<string>;
 }
 
 interface EvidencePackManifest {
@@ -156,6 +174,95 @@ export function writeEvidencePack(options: EvidencePackOptions): EvidencePackRes
   return {
     outputDir,
     files: ARTIFACTS.map((artifact) => artifact.file),
+  };
+}
+
+export function verifyEvidencePack(outputDir: string): EvidencePackVerificationResult {
+  const resolvedOutputDir = resolve(outputDir);
+  const manifestPath = resolve(resolvedOutputDir, "manifest.json");
+  const errors: string[] = [];
+
+  if (!existsSync(manifestPath)) {
+    return {
+      ok: false,
+      outputDir: resolvedOutputDir,
+      bundleDigest: null,
+      expectedBundleDigest: null,
+      artifacts: [],
+      errors: ["manifest.json is missing"],
+    };
+  }
+
+  let manifest: EvidencePackManifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as EvidencePackManifest;
+  } catch (error) {
+    return {
+      ok: false,
+      outputDir: resolvedOutputDir,
+      bundleDigest: null,
+      expectedBundleDigest: null,
+      artifacts: [],
+      errors: [`manifest.json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`],
+    };
+  }
+
+  const artifactContents = new Map<string, string>();
+  const artifacts = manifest.artifacts.map((artifact) => {
+    const artifactPath = resolve(resolvedOutputDir, artifact.file);
+    if (artifact.file === "manifest.json") {
+      return {
+        file: artifact.file,
+        ok: artifact.sha256 === null && artifact.bytes === null,
+        expectedSha256: artifact.sha256,
+        actualSha256: null,
+        expectedBytes: artifact.bytes,
+        actualBytes: null,
+      };
+    }
+
+    if (!existsSync(artifactPath)) {
+      errors.push(`${artifact.file} is missing`);
+      return {
+        file: artifact.file,
+        ok: false,
+        expectedSha256: artifact.sha256,
+        actualSha256: null,
+        expectedBytes: artifact.bytes,
+        actualBytes: null,
+      };
+    }
+
+    const content = readFileSync(artifactPath, "utf-8");
+    artifactContents.set(artifact.file, content);
+    const actual = hashContent(content);
+    const ok = actual.sha256 === artifact.sha256 && actual.bytes === artifact.bytes;
+    if (!ok) {
+      errors.push(`${artifact.file} digest mismatch`);
+    }
+
+    return {
+      file: artifact.file,
+      ok,
+      expectedSha256: artifact.sha256,
+      actualSha256: actual.sha256,
+      expectedBytes: artifact.bytes,
+      actualBytes: actual.bytes,
+    };
+  });
+  const bundleDigest = buildBundleDigest(artifactContents);
+
+  if (bundleDigest !== manifest.bundleDigest) {
+    errors.push("bundle digest mismatch");
+  }
+
+  return {
+    ok: errors.length === 0 && artifacts.every((artifact) => artifact.ok),
+    outputDir: resolvedOutputDir,
+    bundleDigest,
+    expectedBundleDigest: manifest.bundleDigest,
+    artifacts,
+    errors,
   };
 }
 

@@ -10,7 +10,7 @@ import { renderTerminalReport } from "./reporter/terminal.js";
 import { renderJsonReport, renderMarkdownReport } from "./reporter/json.js";
 import { renderHtmlReport } from "./reporter/html.js";
 import { renderSarifReport } from "./reporter/sarif.js";
-import { writeEvidencePack } from "./evidence-pack/index.js";
+import { verifyEvidencePack, writeEvidencePack } from "./evidence-pack/index.js";
 import { runOpusPipeline, renderOpusAnalysis } from "./opus/index.js";
 import { applyFixes, renderFixSummary } from "./fixer/index.js";
 import { runInit, renderInitSummary } from "./init/index.js";
@@ -663,6 +663,46 @@ program
   .action((options) => {
     const initResult = runInit(options.path);
     console.log(renderInitSummary(initResult));
+  });
+
+// ─── Evidence Pack Commands ──────────────────────────────
+
+const evidencePack = program
+  .command("evidence-pack")
+  .description("Inspect and verify AgentShield evidence-pack bundles");
+
+evidencePack
+  .command("verify")
+  .description("Verify evidence-pack artifact digests and bundle digest")
+  .argument("<dir>", "Evidence-pack directory")
+  .option("--json", "Emit machine-readable verification results", false)
+  .action((dir, options) => {
+    const result = verifyEvidencePack(dir);
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log("");
+      console.log("AgentShield Evidence Pack Verification");
+      console.log(`Directory: ${result.outputDir}`);
+      console.log(`Status:    ${result.ok ? "passed" : "failed"}`);
+      console.log(`Digest:    ${result.bundleDigest ?? "not available"}`);
+      console.log("");
+      for (const artifact of result.artifacts) {
+        console.log(`- ${artifact.ok ? "OK" : "FAIL"} ${artifact.file}`);
+      }
+      if (result.errors.length > 0) {
+        console.log("");
+        console.log("Errors:");
+        for (const error of result.errors) {
+          console.log(`- ${error}`);
+        }
+      }
+      console.log("");
+    }
+
+    if (!result.ok) {
+      process.exit(6);
+    }
   });
 
 // ─── Baseline Commands ───────────────────────────────────
