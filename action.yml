@@ -43,6 +43,14 @@ inputs:
     description: "Fail the action when the organization policy is non-compliant"
     required: false
     default: "true"
+  evidence-pack:
+    description: "Path to write an AgentShield evidence pack for audit and security-review handoffs"
+    required: false
+    default: ""
+  verify-evidence-pack:
+    description: "Verify evidence-pack artifact hashes and bundle digest after writing"
+    required: false
+    default: "true"
 
 outputs:
   score:
@@ -71,6 +79,12 @@ outputs:
     description: "Organization policy status: not-run, compliant, non-compliant, or error"
   policy-violations:
     description: "Number of unsuppressed organization policy violations"
+  evidence-pack-path:
+    description: "Path to the generated evidence-pack directory"
+  evidence-pack-status:
+    description: "Evidence-pack verification status: not-run, passed, failed, or error"
+  evidence-pack-digest:
+    description: "Verified evidence-pack bundle digest"
 
 runs:
   using: "node20"
