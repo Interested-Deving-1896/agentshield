@@ -524,8 +524,20 @@ agentshield scan [options]         Scan configuration directory
   -v, --verbose                    Show detailed output
 
 agentshield init                   Generate secure baseline config
+agentshield baseline write         Write a scan baseline JSON file
 agentshield policy init            Generate an organization policy preset
 ```
+
+Baseline write:
+
+```bash
+agentshield baseline write --path .claude --output .github/agentshield-baseline.json
+agentshield baseline write --path .claude --output baseline.json --json
+```
+
+The baseline command is a first-class wrapper around the existing scan baseline
+format. Use it to create the accepted snapshot, then compare future scans with
+`agentshield scan --baseline .github/agentshield-baseline.json --gate`.
 
 Runtime monitor lifecycle:
 
