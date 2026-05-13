@@ -196,6 +196,7 @@ function createScanLogger(
 // ─── CLI Setup ────────────────────────────────────────────────
 
 const program = new Command();
+const SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"] as const;
 
 program
   .name("agentshield")
@@ -216,6 +217,22 @@ function emitReportOutput(output: string, outputPath: string | undefined): void 
 
 function collectOption(value: string, previous: string[]): string[] {
   return [...previous, value];
+}
+
+function severityIndex(severity: string): number {
+  return SEVERITY_ORDER.indexOf(severity as typeof SEVERITY_ORDER[number]);
+}
+
+function filterFindingsByMinSeverity<T extends { severity: string }>(
+  findings: ReadonlyArray<T>,
+  minSeverity: string
+): T[] {
+  const minIndex = severityIndex(minSeverity);
+  return findings.filter((finding) => severityIndex(finding.severity) <= minIndex);
+}
+
+function validateMinSeverity(minSeverity: string): boolean {
+  return severityIndex(minSeverity) >= 0;
 }
 
 program
@@ -265,13 +282,9 @@ program
     const result = scan(targetPath);
 
     // Filter by severity
-    const severityOrder = ["critical", "high", "medium", "low", "info"];
-    const minIndex = severityOrder.indexOf(options.minSeverity);
     const filteredResult = {
       ...result,
-      findings: result.findings.filter(
-        (f) => severityOrder.indexOf(f.severity) <= minIndex
-      ),
+      findings: filterFindingsByMinSeverity(result.findings, options.minSeverity),
     };
 
     // Generate report
@@ -566,6 +579,64 @@ program
   .action((options) => {
     const initResult = runInit(options.path);
     console.log(renderInitSummary(initResult));
+  });
+
+// ─── Baseline Commands ───────────────────────────────────
+
+const baseline = program
+  .command("baseline")
+  .description("Create and inspect AgentShield drift baselines");
+
+baseline
+  .command("write")
+  .description("Scan a target and write the current findings as a baseline")
+  .option("-p, --path <path>", "Path to scan (default: ~/.claude or current dir)")
+  .requiredOption("-o, --output <path>", "Path to write the baseline JSON file")
+  .option("--min-severity <severity>", "Minimum severity to include: critical, high, medium, low, info", "info")
+  .option("--json", "Emit machine-readable baseline metadata", false)
+  .action(async (options) => {
+    if (!validateMinSeverity(options.minSeverity)) {
+      console.error(`Error: --min-severity must be one of: ${SEVERITY_ORDER.join(", ")}`);
+      process.exit(1);
+    }
+
+    const targetPath = resolveTargetPath(options.path);
+    if (!existsSync(targetPath)) {
+      console.error(`Error: Path does not exist: ${targetPath}`);
+      process.exit(1);
+    }
+
+    const { saveBaseline } = await import("./baseline/index.js");
+    const result = scan(targetPath);
+    const filteredResult = {
+      ...result,
+      findings: filterFindingsByMinSeverity(result.findings, options.minSeverity),
+    };
+    const report = calculateScore(filteredResult);
+    const outputPath = resolve(options.output);
+
+    saveBaseline(filteredResult.findings, report.score, outputPath);
+
+    const metadata = {
+      baselinePath: outputPath,
+      targetPath,
+      score: report.score.numericScore,
+      grade: report.score.grade,
+      findings: filteredResult.findings.length,
+      minSeverity: options.minSeverity,
+    };
+
+    if (options.json) {
+      console.log(JSON.stringify(metadata, null, 2));
+      return;
+    }
+
+    console.log("\n  Baseline written\n");
+    console.log(`  Target:   ${metadata.targetPath}`);
+    console.log(`  Output:   ${metadata.baselinePath}`);
+    console.log(`  Score:    ${metadata.score} (${metadata.grade})`);
+    console.log(`  Findings: ${metadata.findings}`);
+    console.log(`  Filter:   ${metadata.minSeverity}+\n`);
   });
 
 // ─── Watch Command ───────────────────────────────────────

@@ -163,6 +163,15 @@ Baseline comparison output is treated as auxiliary output. When JSON or SARIF is
 written to stdout, baseline save/compare and gate text is written to stderr so
 the primary machine-readable report remains parseable.
 
+Baseline snapshot creation is available as a first-class CLI command:
+
+```bash
+agentshield baseline write --path .claude --output .github/agentshield-baseline.json
+```
+
+Add `--json` to emit parseable metadata with `baselinePath`, `targetPath`,
+`score`, `grade`, `findings`, and `minSeverity`.
+
 Top-level shape:
 
 ```ts

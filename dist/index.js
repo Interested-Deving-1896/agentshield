@@ -11874,9 +11874,9 @@ function loadBaseline(baselinePath) {
     return null;
   }
 }
-function compareBaseline(baseline, currentFindings, currentScore) {
+function compareBaseline(baseline2, currentFindings, currentScore) {
   const baselineFingerprints = new Set(
-    baseline.findings.map((f) => f.fingerprint)
+    baseline2.findings.map((f) => f.fingerprint)
   );
   const currentFingerprints = new Set(
     currentFindings.map(fingerprintFinding2)
@@ -11884,11 +11884,11 @@ function compareBaseline(baseline, currentFindings, currentScore) {
   const newFindings = currentFindings.filter(
     (f) => !baselineFingerprints.has(fingerprintFinding2(f))
   );
-  const resolvedFindings = baseline.findings.filter(
+  const resolvedFindings = baseline2.findings.filter(
     (f) => !currentFingerprints.has(f.fingerprint)
   );
   const unchangedCount = currentFindings.length - newFindings.length;
-  const scoreDelta = currentScore.numericScore - baseline.score.numericScore;
+  const scoreDelta = currentScore.numericScore - baseline2.score.numericScore;
   const newCriticalCount = newFindings.filter(
     (f) => f.severity === "critical"
   ).length;
@@ -11898,12 +11898,12 @@ function compareBaseline(baseline, currentFindings, currentScore) {
   const isRegression = newFindings.length > 0 || scoreDelta < 0;
   return {
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    baselineTimestamp: baseline.timestamp,
+    baselineTimestamp: baseline2.timestamp,
     newFindings,
     resolvedFindings,
     unchangedCount,
     scoreDelta,
-    baselineScore: baseline.score.numericScore,
+    baselineScore: baseline2.score.numericScore,
     currentScore: currentScore.numericScore,
     isRegression,
     newCriticalCount,
@@ -15756,15 +15756,15 @@ function createBaseline(findings, score) {
     findingIds
   };
 }
-function diffBaseline(baseline, currentFindings, currentScore) {
+function diffBaseline(baseline2, currentFindings, currentScore) {
   const currentIds = new Set(currentFindings.map(fingerprintFinding));
   const newFindings = currentFindings.filter(
-    (f) => !baseline.findingIds.has(fingerprintFinding(f))
+    (f) => !baseline2.findingIds.has(fingerprintFinding(f))
   );
-  const resolvedFindings = baseline.findings.filter(
+  const resolvedFindings = baseline2.findings.filter(
     (f) => !currentIds.has(fingerprintFinding(f))
   );
-  const scoreDelta = currentScore.numericScore - baseline.score.numericScore;
+  const scoreDelta = currentScore.numericScore - baseline2.score.numericScore;
   const hasCritical = newFindings.some((f) => f.severity === "critical");
   const isRegression = newFindings.length > 0 || scoreDelta < 0;
   return {
@@ -15772,7 +15772,7 @@ function diffBaseline(baseline, currentFindings, currentScore) {
     newFindings,
     resolvedFindings,
     scoreDelta,
-    previousScore: baseline.score.numericScore,
+    previousScore: baseline2.score.numericScore,
     currentScore: currentScore.numericScore,
     isRegression,
     hasCritical
@@ -15879,14 +15879,14 @@ var SEVERITY_ORDER = {
   info: 4
 };
 function startWatcher(config) {
-  let baseline = null;
+  let baseline2 = null;
   let lastDrift = null;
   let scanCount = 0;
   let debounceTimer = null;
   const watchers = [];
   const initialBaseline = performInitialScan(config);
   if (initialBaseline) {
-    baseline = initialBaseline;
+    baseline2 = initialBaseline;
     scanCount = 1;
   }
   for (const watchPath of config.paths) {
@@ -15902,9 +15902,9 @@ function startWatcher(config) {
             clearTimeout(debounceTimer);
           }
           debounceTimer = setTimeout(() => {
-            void handleChange(config, baseline, (result) => {
+            void handleChange(config, baseline2, (result) => {
               if (result.newBaseline) {
-                baseline = result.newBaseline;
+                baseline2 = result.newBaseline;
               }
               if (result.drift) {
                 lastDrift = result.drift;
@@ -15933,7 +15933,7 @@ function startWatcher(config) {
   function getState() {
     return {
       isRunning: watchers.length > 0,
-      baseline,
+      baseline: baseline2,
       lastDrift,
       scanCount
     };
@@ -16516,6 +16516,7 @@ function createScanLogger(logPath, logFormat) {
   };
 }
 var program = new Command();
+var SEVERITY_ORDER4 = ["critical", "high", "medium", "low", "info"];
 program.name("agentshield").description("Security auditor for AI agent configurations").version("1.4.0");
 function emitReportOutput(output, outputPath) {
   if (!outputPath) {
@@ -16529,6 +16530,16 @@ function emitReportOutput(output, outputPath) {
 }
 function collectOption(value, previous) {
   return [...previous, value];
+}
+function severityIndex(severity) {
+  return SEVERITY_ORDER4.indexOf(severity);
+}
+function filterFindingsByMinSeverity(findings, minSeverity) {
+  const minIndex = severityIndex(minSeverity);
+  return findings.filter((finding) => severityIndex(finding.severity) <= minIndex);
+}
+function validateMinSeverity(minSeverity) {
+  return severityIndex(minSeverity) >= 0;
 }
 program.command("scan").description("Scan a Claude Code configuration directory for security issues").option("-p, --path <path>", "Path to scan (default: ~/.claude or current dir)").option("-f, --format <format>", "Output format: terminal, json, markdown, html, sarif", "terminal").option("-o, --output <path>", "Write the primary report output to a file").option("--fix", "Auto-apply safe fixes", false).option("--opus", "Enable Opus 4.6 multi-agent deep analysis", false).option("--stream", "Stream Opus analysis in real-time", false).option("--injection", "Run active prompt injection testing against the config", false).option("--sandbox", "Execute hooks in sandbox and observe behavior", false).option("--taint", "Run taint analysis (data flow tracking)", false).option("--deep", "Run ALL analysis (injection + sandbox + taint + opus)", false).option("--log <path>", "Write structured scan log to file").option("--log-format <format>", "Log format: ndjson (default) or json", "ndjson").option("--corpus", "Run scanner validation against built-in attack corpus", false).option("--baseline <path>", "Compare against a baseline file and report regressions").option("--save-baseline <path>", "Save current scan results as a baseline file").option("--gate", "Fail if new critical/high findings or score drops (use with --baseline)", false).option("--supply-chain", "Verify MCP npm packages against known-bad list and typosquatting", false).option("--supply-chain-online", "Also query npm registry for metadata (requires network)", false).option("--policy <path>", "Validate against an organization policy file").option("--min-severity <severity>", "Minimum severity to report: critical, high, medium, low, info", "info").option("-v, --verbose", "Show detailed output", false).action(async (options) => {
   const targetPath = resolveTargetPath(options.path);
@@ -16544,13 +16555,9 @@ program.command("scan").description("Scan a Claude Code configuration directory 
   const enableOpus = options.deep || options.opus;
   logger.log({ level: "info", phase: "static", message: "Running static analysis" });
   const result = scan(targetPath);
-  const severityOrder = ["critical", "high", "medium", "low", "info"];
-  const minIndex = severityOrder.indexOf(options.minSeverity);
   const filteredResult = {
     ...result,
-    findings: result.findings.filter(
-      (f) => severityOrder.indexOf(f.severity) <= minIndex
-    )
+    findings: filterFindingsByMinSeverity(result.findings, options.minSeverity)
   };
   const report = calculateScore(filteredResult);
   logger.log({
@@ -16639,13 +16646,13 @@ program.command("scan").description("Scan a Claude Code configuration directory 
   }
   if (options.baseline) {
     const { loadBaseline: loadBaseline2, compareBaseline: compareBaseline2, evaluateGate: evaluateGate2, renderComparison: renderComparison2, renderGateResult: renderGateResult2 } = await Promise.resolve().then(() => (init_baseline(), baseline_exports));
-    const baseline = loadBaseline2(options.baseline);
-    if (!baseline) {
+    const baseline2 = loadBaseline2(options.baseline);
+    if (!baseline2) {
       console.error(`
   Error: Could not load baseline from ${options.baseline}
 `);
     } else {
-      const comparison = compareBaseline2(baseline, filteredResult.findings, report.score);
+      const comparison = compareBaseline2(baseline2, filteredResult.findings, report.score);
       writeAuxiliaryOutput(renderComparison2(comparison));
       logger.log({
         level: comparison.isRegression ? "warn" : "info",
@@ -16808,6 +16815,46 @@ Opus analysis failed: ${message}`);
 program.command("init").description("Generate a secure baseline Claude Code configuration").option("-p, --path <path>", "Target directory (default: current directory)").action((options) => {
   const initResult = runInit(options.path);
   console.log(renderInitSummary(initResult));
+});
+var baseline = program.command("baseline").description("Create and inspect AgentShield drift baselines");
+baseline.command("write").description("Scan a target and write the current findings as a baseline").option("-p, --path <path>", "Path to scan (default: ~/.claude or current dir)").requiredOption("-o, --output <path>", "Path to write the baseline JSON file").option("--min-severity <severity>", "Minimum severity to include: critical, high, medium, low, info", "info").option("--json", "Emit machine-readable baseline metadata", false).action(async (options) => {
+  if (!validateMinSeverity(options.minSeverity)) {
+    console.error(`Error: --min-severity must be one of: ${SEVERITY_ORDER4.join(", ")}`);
+    process.exit(1);
+  }
+  const targetPath = resolveTargetPath(options.path);
+  if (!existsSync10(targetPath)) {
+    console.error(`Error: Path does not exist: ${targetPath}`);
+    process.exit(1);
+  }
+  const { saveBaseline: saveBaseline2 } = await Promise.resolve().then(() => (init_baseline(), baseline_exports));
+  const result = scan(targetPath);
+  const filteredResult = {
+    ...result,
+    findings: filterFindingsByMinSeverity(result.findings, options.minSeverity)
+  };
+  const report = calculateScore(filteredResult);
+  const outputPath = resolve8(options.output);
+  saveBaseline2(filteredResult.findings, report.score, outputPath);
+  const metadata = {
+    baselinePath: outputPath,
+    targetPath,
+    score: report.score.numericScore,
+    grade: report.score.grade,
+    findings: filteredResult.findings.length,
+    minSeverity: options.minSeverity
+  };
+  if (options.json) {
+    console.log(JSON.stringify(metadata, null, 2));
+    return;
+  }
+  console.log("\n  Baseline written\n");
+  console.log(`  Target:   ${metadata.targetPath}`);
+  console.log(`  Output:   ${metadata.baselinePath}`);
+  console.log(`  Score:    ${metadata.score} (${metadata.grade})`);
+  console.log(`  Findings: ${metadata.findings}`);
+  console.log(`  Filter:   ${metadata.minSeverity}+
+`);
 });
 program.command("watch").description("Continuously monitor config directories for security regressions").option("-p, --path <path>", "Path to watch (default: ~/.claude or current dir)").option("--debounce <ms>", "Debounce interval in milliseconds", "500").option("--alert <mode>", "Alert mode: terminal, webhook, both", "terminal").option("--webhook <url>", "Webhook URL for alerts").option("--min-severity <severity>", "Minimum severity to track: critical, high, medium, low, info", "info").option("--block", "Exit non-zero if critical findings detected (for CI integration)", false).action((options) => {
   const targetPath = resolveTargetPath(options.path);
