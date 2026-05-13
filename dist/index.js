@@ -14473,6 +14473,7 @@ function normalizeUri(uri) {
 
 // src/evidence-pack/index.ts
 init_remediation();
+import { createHash as createHash2 } from "crypto";
 import { mkdirSync as mkdirSync2, writeFileSync as writeFileSync2 } from "fs";
 import { basename as basename3, resolve as resolve3 } from "path";
 import { homedir as homedir2 } from "os";
@@ -14523,6 +14524,7 @@ var ARTIFACTS = [
     description: "Stable-fingerprint remediation queue for ticketing and CI handoffs."
   }
 ];
+var BUNDLE_DIGEST_EXCLUDED_FILES = /* @__PURE__ */ new Set(["manifest.json", "README.md"]);
 function writeEvidencePack(options) {
   const outputDir = resolve3(options.outputDir);
   const generatedAt = options.generatedAt ?? (/* @__PURE__ */ new Date()).toISOString();
@@ -14539,39 +14541,77 @@ function writeEvidencePack(options) {
   };
   const supplyChainReport = redactor.value(options.supplyChainReport);
   const remediationPlan = buildRemediationPlan(report, { generatedAt });
-  const manifest = {
+  const artifactContents = /* @__PURE__ */ new Map([
+    ["agentshield-report.json", normalizeText(renderJsonReport(report))],
+    ["agentshield-report.html", normalizeText(renderHtmlReport(report))],
+    [
+      "agentshield-results.sarif",
+      normalizeText(renderSarifReport(report, {
+        policyEvaluation: options.policyEvaluation ? policyEvaluation : void 0,
+        policyUri: options.policyPath ? redactor.string(options.policyPath) : void 0
+      }))
+    ],
+    ["policy-evaluation.json", normalizeText(redactor.json(policyEvaluation))],
+    ["baseline-comparison.json", normalizeText(redactor.json(baselineComparison))],
+    ["supply-chain.json", normalizeText(redactor.json(supplyChainReport))],
+    ["remediation-plan.json", normalizeText(redactor.json(remediationPlan))]
+  ]);
+  const bundleDigest = buildBundleDigest(artifactContents);
+  const readmeManifest = {
     schemaVersion: 1,
     generatedAt,
     generator: "agentshield",
     redacted,
     targetPath: redactor.string(options.report.targetPath),
-    artifacts: ARTIFACTS
+    bundleDigest,
+    artifacts: buildArtifactManifestEntries(artifactContents)
   };
+  artifactContents.set("README.md", normalizeText(renderReadme(readmeManifest, options)));
+  const manifest = {
+    ...readmeManifest,
+    artifacts: buildArtifactManifestEntries(artifactContents)
+  };
+  artifactContents.set("manifest.json", normalizeText(redactor.json(manifest)));
   mkdirSync2(outputDir, { recursive: true });
-  writeText(outputDir, "manifest.json", redactor.json(manifest));
-  writeText(outputDir, "README.md", renderReadme(manifest, options));
-  writeText(outputDir, "agentshield-report.json", renderJsonReport(report));
-  writeText(outputDir, "agentshield-report.html", renderHtmlReport(report));
-  writeText(
-    outputDir,
-    "agentshield-results.sarif",
-    renderSarifReport(report, {
-      policyEvaluation: options.policyEvaluation ? policyEvaluation : void 0,
-      policyUri: options.policyPath ? redactor.string(options.policyPath) : void 0
-    })
-  );
-  writeText(outputDir, "policy-evaluation.json", redactor.json(policyEvaluation));
-  writeText(outputDir, "baseline-comparison.json", redactor.json(baselineComparison));
-  writeText(outputDir, "supply-chain.json", redactor.json(supplyChainReport));
-  writeText(outputDir, "remediation-plan.json", redactor.json(remediationPlan));
+  for (const artifact of ARTIFACTS) {
+    writeText(outputDir, artifact.file, artifactContents.get(artifact.file) ?? "");
+  }
   return {
     outputDir,
     files: ARTIFACTS.map((artifact) => artifact.file)
   };
 }
 function writeText(outputDir, fileName, content) {
-  writeFileSync2(resolve3(outputDir, fileName), content.endsWith("\n") ? content : `${content}
-`);
+  writeFileSync2(resolve3(outputDir, fileName), normalizeText(content));
+}
+function normalizeText(content) {
+  return content.endsWith("\n") ? content : `${content}
+`;
+}
+function buildArtifactManifestEntries(artifactContents) {
+  return ARTIFACTS.map((artifact) => {
+    if (artifact.file === "manifest.json") {
+      return { ...artifact, sha256: null, bytes: null };
+    }
+    const content = artifactContents.get(artifact.file);
+    return content ? { ...artifact, ...hashContent(content) } : { ...artifact, sha256: null, bytes: null };
+  });
+}
+function buildBundleDigest(artifactContents) {
+  const bundleEntries = ARTIFACTS.filter((artifact) => !BUNDLE_DIGEST_EXCLUDED_FILES.has(artifact.file)).map((artifact) => {
+    const content = artifactContents.get(artifact.file);
+    return {
+      file: artifact.file,
+      ...content ? hashContent(content) : { sha256: null, bytes: null }
+    };
+  });
+  return `sha256:${createHash2("sha256").update(JSON.stringify(bundleEntries)).digest("hex")}`;
+}
+function hashContent(content) {
+  return {
+    sha256: createHash2("sha256").update(content).digest("hex"),
+    bytes: Buffer.byteLength(content, "utf8")
+  };
 }
 function renderReadme(manifest, options) {
   const policyStatus = options.policyEvaluation ? options.policyEvaluation.passed ? "passed" : "failed" : "not run";
@@ -14582,6 +14622,7 @@ function renderReadme(manifest, options) {
     `Generated: ${manifest.generatedAt}`,
     `Target: ${manifest.targetPath}`,
     `Redacted: ${manifest.redacted ? "yes" : "no"}`,
+    `Bundle digest: ${manifest.bundleDigest}`,
     "",
     "## Summary",
     "",
