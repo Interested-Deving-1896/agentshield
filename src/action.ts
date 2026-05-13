@@ -14,6 +14,7 @@ import { scan } from "./scanner/index.js";
 import { calculateScore } from "./reporter/score.js";
 import { renderMarkdownReport } from "./reporter/json.js";
 import { renderSarifReport } from "./reporter/sarif.js";
+import { verifyEvidencePack, writeEvidencePack } from "./evidence-pack/index.js";
 import {
   renderPolicyJobSummary,
   statusForPolicyEvaluation,
@@ -24,6 +25,8 @@ import {
   statusForBaselineGate,
 } from "./action-baseline.js";
 import type { PolicyEvaluation } from "./policy/index.js";
+import type { BaselineComparison } from "./baseline/index.js";
+import type { SupplyChainReport } from "./supply-chain/index.js";
 import type { Finding, Severity } from "./types.js";
 
 // ─── GitHub Actions Helpers ──────────────────────────────────
@@ -95,6 +98,24 @@ function emitAnnotations(findings: ReadonlyArray<Finding>): void {
   }
 }
 
+function emptySupplyChainReport(): SupplyChainReport {
+  return {
+    packages: [],
+    totalPackages: 0,
+    riskyPackages: 0,
+    criticalCount: 0,
+    highCount: 0,
+    provenance: {
+      npmPackages: 0,
+      gitPackages: 0,
+      pinnedPackages: 0,
+      unpinnedPackages: 0,
+      knownGoodPackages: 0,
+      registryMetadataPackages: 0,
+    },
+  };
+}
+
 // ─── Main ────────────────────────────────────────────────────
 
 async function run(): Promise<void> {
@@ -107,6 +128,8 @@ async function run(): Promise<void> {
   const sarifOutput = getInput("sarif-output", "agentshield-results.sarif");
   const policyPath = getInput("policy", "");
   const failOnPolicy = getInput("fail-on-policy", "true") === "true";
+  const evidencePackPath = getInput("evidence-pack", "");
+  const verifyEvidencePackOutput = getInput("verify-evidence-pack", "true") === "true";
 
   // Resolve and validate path
   const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
@@ -155,9 +178,13 @@ async function run(): Promise<void> {
   setOutput("score-delta", "0");
   setOutput("policy-status", "not-run");
   setOutput("policy-violations", "0");
+  setOutput("evidence-pack-status", "not-run");
+  setOutput("evidence-pack-digest", "");
 
   let policyEvaluation: PolicyEvaluation | null = null;
   let shouldFailOnPolicy = false;
+  let baselineComparison: BaselineComparison | null = null;
+  let shouldFailOnBaseline = false;
 
   if (policyPath) {
     const { loadPolicy, evaluatePolicy, renderPolicyEvaluation } = await import(
@@ -253,6 +280,7 @@ async function run(): Promise<void> {
 
     if (baseline) {
       const comparison = compareBaseline(baseline, filteredResult.findings, report.score);
+      baselineComparison = comparison;
 
       setOutput("new-findings", String(comparison.newFindings.length));
       setOutput("resolved-findings", String(comparison.resolvedFindings.length));
@@ -272,8 +300,7 @@ async function run(): Promise<void> {
       if (!gateResult.passed) {
         console.log("");
         console.log(`::error::AgentShield gate FAILED: ${gateResult.reasons.join("; ")}`);
-        process.exitCode = 1;
-        return;
+        shouldFailOnBaseline = true;
       } else {
         console.log("Baseline gate: PASSED");
       }
@@ -284,7 +311,47 @@ async function run(): Promise<void> {
     }
   }
 
+  if (evidencePackPath) {
+    try {
+      const packPath = resolve(workspace, evidencePackPath);
+      const pack = writeEvidencePack({
+        outputDir: packPath,
+        report,
+        policyEvaluation: policyEvaluation ?? undefined,
+        policyPath: policyPath || undefined,
+        baselineComparison: baselineComparison ?? undefined,
+        baselinePath: baselinePath || undefined,
+        supplyChainReport: emptySupplyChainReport(),
+      });
+      setOutput("evidence-pack-path", pack.outputDir);
+      console.log(`Evidence pack written to: ${pack.outputDir}`);
+
+      if (verifyEvidencePackOutput) {
+        const verification = verifyEvidencePack(pack.outputDir);
+        setOutput("evidence-pack-status", verification.ok ? "passed" : "failed");
+        setOutput("evidence-pack-digest", verification.bundleDigest ?? "");
+        if (!verification.ok) {
+          console.log(`::error::AgentShield evidence pack verification failed: ${escapeAnnotation(verification.errors.join("; "))}`);
+          process.exitCode = 1;
+          return;
+        }
+        console.log(`Evidence pack verification: PASSED (${verification.bundleDigest})`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setOutput("evidence-pack-status", "error");
+      console.log(`::error::AgentShield evidence pack failed: ${escapeAnnotation(message)}`);
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   if (shouldFailOnPolicy) {
+    process.exitCode = 1;
+    return;
+  }
+
+  if (shouldFailOnBaseline) {
     process.exitCode = 1;
     return;
   }

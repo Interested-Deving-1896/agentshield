@@ -205,13 +205,13 @@ var init_presets = __esm({
 });
 
 // src/policy/evaluate.ts
-import { readFileSync as readFileSync2, existsSync as existsSync3 } from "fs";
+import { readFileSync as readFileSync3, existsSync as existsSync4 } from "fs";
 function loadPolicy(policyPath) {
-  if (!existsSync3(policyPath)) {
+  if (!existsSync4(policyPath)) {
     return { success: false, error: `Policy file not found: ${policyPath}` };
   }
   try {
-    const raw = readFileSync2(policyPath, "utf-8");
+    const raw = readFileSync3(policyPath, "utf-8");
     const parsed = JSON.parse(raw);
     return { success: true, policy: OrgPolicySchema.parse(parsed) };
   } catch (error) {
@@ -643,9 +643,9 @@ var init_types2 = __esm({
 });
 
 // src/baseline/compare.ts
-import { readFileSync as readFileSync3, writeFileSync, existsSync as existsSync4 } from "fs";
-import { dirname as dirname2 } from "path";
-import { mkdirSync } from "fs";
+import { readFileSync as readFileSync4, writeFileSync as writeFileSync3, existsSync as existsSync5 } from "fs";
+import { dirname as dirname3 } from "path";
+import { mkdirSync as mkdirSync3 } from "fs";
 function fingerprintFinding(finding) {
   return `${finding.id}::${finding.file}::${finding.evidence ?? ""}`;
 }
@@ -664,16 +664,16 @@ function saveBaseline(findings, score, outputPath) {
       fingerprint: fingerprintFinding(f)
     }))
   };
-  const dir = dirname2(outputPath);
-  if (!existsSync4(dir)) {
-    mkdirSync(dir, { recursive: true });
+  const dir = dirname3(outputPath);
+  if (!existsSync5(dir)) {
+    mkdirSync3(dir, { recursive: true });
   }
-  writeFileSync(outputPath, JSON.stringify(serialized, null, 2));
+  writeFileSync3(outputPath, JSON.stringify(serialized, null, 2));
 }
 function loadBaseline(baselinePath) {
-  if (!existsSync4(baselinePath)) return null;
+  if (!existsSync5(baselinePath)) return null;
   try {
-    const raw = readFileSync3(baselinePath, "utf-8");
+    const raw = readFileSync4(baselinePath, "utf-8");
     const parsed = JSON.parse(raw);
     if (parsed.version !== 1 || !Array.isArray(parsed.findings)) {
       return null;
@@ -825,10 +825,10 @@ var init_baseline = __esm({
 });
 
 // src/action.ts
-import { resolve as resolve2 } from "path";
-import { dirname as dirname3 } from "path";
-import { existsSync as existsSync5 } from "fs";
-import { appendFileSync, mkdirSync as mkdirSync2, writeFileSync as writeFileSync2 } from "fs";
+import { resolve as resolve4 } from "path";
+import { dirname as dirname4 } from "path";
+import { existsSync as existsSync6 } from "fs";
+import { appendFileSync, mkdirSync as mkdirSync4, writeFileSync as writeFileSync4 } from "fs";
 
 // src/scanner/discovery.ts
 import { readFileSync, existsSync, readdirSync, statSync } from "fs";
@@ -5861,8 +5861,8 @@ var rawMcpRules = [
       const findings = [];
       function isNpxCommand(cmd) {
         if (!cmd) return false;
-        const basename3 = cmd.split(/[\\/]/).pop() ?? "";
-        return basename3 === "npx" || basename3 === "npx.cmd" || basename3 === "npx.exe";
+        const basename4 = cmd.split(/[\\/]/).pop() ?? "";
+        return basename4 === "npx" || basename4 === "npx.cmd" || basename4 === "npx.exe";
       }
       const npxValueTakingOptions = /* @__PURE__ */ new Set([
         "-p",
@@ -9354,6 +9354,9 @@ function formatRuntimeConfidence(value) {
       return value;
   }
 }
+function renderJsonReport(report) {
+  return JSON.stringify(report, null, 2);
+}
 function renderMarkdownReport(report) {
   const lines = [];
   const s = report.summary;
@@ -9690,6 +9693,1366 @@ function normalizeUri(uri) {
   return uri.replace(/\\/g, "/");
 }
 
+// src/evidence-pack/index.ts
+import { createHash as createHash2 } from "crypto";
+import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync as writeFileSync2 } from "fs";
+import { basename as basename3, resolve as resolve3 } from "path";
+import { homedir as homedir2 } from "os";
+
+// src/remediation/index.ts
+import { mkdirSync, writeFileSync } from "fs";
+import { createHash } from "crypto";
+import { dirname as dirname2, resolve as resolve2 } from "path";
+var ZERO_BY_SEVERITY = {
+  critical: 0,
+  high: 0,
+  medium: 0,
+  low: 0,
+  info: 0
+};
+var SEVERITY_RANK = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+  info: 4
+};
+function buildRemediationPlan(report, options = {}) {
+  const findings = [...report.findings].sort(compareFindings).map((finding) => toPlanFinding(finding));
+  return {
+    schemaVersion: 1,
+    generatedAt: options.generatedAt ?? (/* @__PURE__ */ new Date()).toISOString(),
+    targetPath: report.targetPath,
+    score: {
+      grade: report.score.grade,
+      numericScore: report.score.numericScore
+    },
+    summary: {
+      totalFindings: findings.length,
+      autoFixable: findings.filter((finding) => finding.action === "auto-fix").length,
+      manualReview: findings.filter((finding) => finding.action === "manual-review").length,
+      bySeverity: countBySeverity(report.findings)
+    },
+    findings
+  };
+}
+function toPlanFinding(finding) {
+  const autoFixable = finding.fix?.auto === true;
+  return {
+    fingerprint: fingerprintFindingForPlan(finding),
+    id: finding.id,
+    severity: finding.severity,
+    category: finding.category,
+    title: finding.title,
+    description: finding.description,
+    file: finding.file,
+    line: finding.line,
+    runtimeConfidence: finding.runtimeConfidence,
+    hasEvidence: Boolean(finding.evidence),
+    action: autoFixable ? "auto-fix" : "manual-review",
+    recommendedCommand: autoFixable ? "agentshield scan --fix" : "Review finding and apply the remediation in source control.",
+    fix: finding.fix ? {
+      description: finding.fix.description,
+      auto: finding.fix.auto
+    } : void 0
+  };
+}
+function fingerprintFindingForPlan(finding) {
+  const evidenceHash = finding.evidence ? createHash("sha256").update(finding.evidence).digest("hex").slice(0, 16) : "no-evidence";
+  return `${finding.id}::${finding.file}::sha256:${evidenceHash}`;
+}
+function countBySeverity(findings) {
+  const counts = { ...ZERO_BY_SEVERITY };
+  for (const finding of findings) {
+    counts[finding.severity] += 1;
+  }
+  return counts;
+}
+function compareFindings(left, right) {
+  return SEVERITY_RANK[left.severity] - SEVERITY_RANK[right.severity] || left.file.localeCompare(right.file) || left.id.localeCompare(right.id) || (left.evidence ?? "").localeCompare(right.evidence ?? "");
+}
+
+// src/reporter/html.ts
+function renderHtmlReport(report) {
+  const gradeMeta = gradeMetadata(report.score.grade);
+  const findings = [...report.findings];
+  const s = report.summary;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentShield Security Report \u2014 Grade ${report.score.grade}</title>
+  <style>${inlineStyles()}</style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="header-content">
+        <div class="grade-badge" style="background-color: ${gradeMeta.color};">
+          <span class="grade-letter">${report.score.grade}</span>
+        </div>
+        <div class="header-info">
+          <h1 class="title">AgentShield Security Report</h1>
+          <p class="subtitle">Score: <strong>${report.score.numericScore}</strong>/100</p>
+          <p class="meta">Target: ${escapeHtml(report.targetPath)}</p>
+          <p class="meta">Scanned: ${formatTimestamp(report.timestamp)}</p>
+        </div>
+      </div>
+    </header>
+
+    ${renderExecutiveSummary(report)}
+
+    <!-- Summary Stats -->
+    <section class="section">
+      <h2 class="section-title">Summary</h2>
+      <div class="stats-grid">
+        ${renderStatCard("Files Scanned", String(s.filesScanned), "files")}
+        ${renderStatCard("Total Findings", String(s.totalFindings), "findings")}
+        ${renderStatCard("Auto-Fixable", String(s.autoFixable), "fixable")}
+        ${renderStatCard("Critical", String(s.critical), "critical")}
+        ${renderStatCard("High", String(s.high), "high")}
+        ${renderStatCard("Medium", String(s.medium), "medium")}
+        ${renderStatCard("Low", String(s.low), "low")}
+        ${renderStatCard("Info", String(s.info), "info")}
+      </div>
+    </section>
+
+    <!-- Score Breakdown -->
+    <section class="section">
+      <h2 class="section-title">Score Breakdown</h2>
+      <div class="breakdown">
+        ${renderScoreBar("Secrets", report.score.breakdown.secrets)}
+        ${renderScoreBar("Permissions", report.score.breakdown.permissions)}
+        ${renderScoreBar("Hooks", report.score.breakdown.hooks)}
+        ${renderScoreBar("MCP Servers", report.score.breakdown.mcp)}
+        ${renderScoreBar("Agents", report.score.breakdown.agents)}
+      </div>
+    </section>
+
+    ${report.harnessAdapters ? `<section class="section">
+      <h2 class="section-title">Harness Adapters</h2>
+      <p class="executive-copy">Matched ${report.harnessAdapters.totalMatched}/${report.harnessAdapters.totalRegistered} registered adapters.</p>
+      <div>
+        ${report.harnessAdapters.matched.length === 0 ? '<p class="executive-copy muted">No harness-specific markers were detected.</p>' : report.harnessAdapters.matched.map((adapter) => renderHarnessAdapterCard(adapter)).join("")}
+      </div>
+    </section>` : ""}
+
+    ${report.skillHealth && report.skillHealth.totalSkills > 0 ? `<section class="section">
+      <h2 class="section-title">Skill Health</h2>
+      <div class="stats-grid">
+        ${renderStatCard("Skills", String(report.skillHealth.totalSkills), "files")}
+        ${renderStatCard("Instrumented", String(report.skillHealth.instrumentedSkills), "fixable")}
+        ${renderStatCard("Versioned", String(report.skillHealth.versionedSkills), "medium")}
+        ${renderStatCard("Rollback-ready", String(report.skillHealth.rollbackReadySkills), "high")}
+        ${renderStatCard("With history", String(report.skillHealth.observedSkills), "info")}
+        ${typeof report.skillHealth.averageScore === "number" ? renderStatCard("Avg health", `${report.skillHealth.averageScore}/100`, "findings") : ""}
+      </div>
+      <div>
+        ${report.skillHealth.skills.map((skill) => renderSkillHealthCard(skill)).join("")}
+      </div>
+    </section>` : ""}
+
+    <!-- Severity Distribution -->
+    <section class="section">
+      <h2 class="section-title">Severity Distribution</h2>
+      <div class="distribution">
+        ${renderDistributionChart(s)}
+      </div>
+    </section>
+
+    <!-- Findings -->
+    <section class="section">
+      <h2 class="section-title">Findings</h2>
+      ${findings.length === 0 ? '<div class="no-findings"><p>No security issues found. Your configuration looks good!</p></div>' : renderFindingsGrouped(findings)}
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>Generated by <strong>AgentShield</strong> &mdash; Security auditor for AI agent configurations</p>
+      <p class="footer-timestamp">${formatTimestamp(report.timestamp)}</p>
+    </footer>
+
+  </div>
+</body>
+</html>`;
+}
+function renderExecutiveSummary(report) {
+  const posture = executivePosture(report);
+  const priorities = executivePriorityFindings(report.findings);
+  const priorityItems = priorities.length === 0 ? '<li class="priority-item muted">No executive action items.</li>' : priorities.map((finding) => {
+    const location = finding.line ? `${finding.file}:${finding.line}` : finding.file;
+    return `<li class="priority-item">
+            <span class="priority-severity" style="background-color: ${severityColor(finding.severity)};">${finding.severity.toUpperCase()}</span>
+            <span>
+              <strong>${escapeHtml(finding.title)}</strong>
+              <span class="priority-meta">${escapeHtml(location)} - ${escapeHtml(finding.category)}</span>
+            </span>
+          </li>`;
+  }).join("");
+  return `
+    <!-- Executive Summary -->
+    <section class="section executive-summary">
+      <h2 class="section-title">Executive Summary</h2>
+      <div class="executive-grid">
+        <div class="executive-card posture-card" style="border-color: ${posture.color};">
+          <span class="executive-label">Risk Posture</span>
+          <strong class="posture-title" style="color: ${posture.color};">${escapeHtml(posture.label)}</strong>
+          <p class="executive-copy">${escapeHtml(posture.detail)}</p>
+        </div>
+        <div class="executive-card">
+          <span class="executive-label">Executive Priorities</span>
+          <ul class="priority-list">${priorityItems}</ul>
+        </div>
+        <div class="executive-card">
+          <span class="executive-label">Category Exposure</span>
+          ${renderCategoryExposure(report.findings)}
+        </div>
+      </div>
+    </section>`;
+}
+function executivePosture(report) {
+  const { summary } = report;
+  if (summary.critical > 0) {
+    return {
+      label: "Immediate remediation required",
+      detail: formatOwnerReviewDetail(summary.critical, summary.high),
+      color: "#f85149"
+    };
+  }
+  if (summary.high > 0) {
+    return {
+      label: "High-risk changes need review",
+      detail: `${summary.high} high-severity findings require owner review before rollout.`,
+      color: "#d29922"
+    };
+  }
+  if (summary.medium > 0) {
+    return {
+      label: "Monitor before broad rollout",
+      detail: `${summary.medium} medium-severity findings should be reviewed before broad rollout.`,
+      color: "#388bfd"
+    };
+  }
+  return {
+    label: "Ready for standard rollout",
+    detail: "No critical or high-severity findings were detected.",
+    color: "#2ea043"
+  };
+}
+function formatOwnerReviewDetail(critical, high) {
+  if (critical > 0 && high > 0) {
+    return `${critical} critical and ${high} high-severity findings require owner review.`;
+  }
+  if (critical > 0) {
+    return `${critical} critical findings require owner review.`;
+  }
+  return `${high} high-severity findings require owner review before rollout.`;
+}
+function executivePriorityFindings(findings) {
+  const severityRank = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+    info: 4
+  };
+  return findings.filter((finding) => finding.severity === "critical" || finding.severity === "high").slice().sort((a, b) => severityRank[a.severity] - severityRank[b.severity]).slice(0, 5);
+}
+function renderCategoryExposure(findings) {
+  if (findings.length === 0) {
+    return '<p class="executive-copy muted">No category exposure to display.</p>';
+  }
+  const categoryCounts = /* @__PURE__ */ new Map();
+  for (const finding of findings) {
+    categoryCounts.set(finding.category, (categoryCounts.get(finding.category) ?? 0) + 1);
+  }
+  const rows = [...categoryCounts.entries()].sort(([leftCategory, leftCount], [rightCategory, rightCount]) => {
+    if (rightCount !== leftCount) return rightCount - leftCount;
+    return leftCategory.localeCompare(rightCategory);
+  }).map(([category, count]) => {
+    const noun = count === 1 ? "finding" : "findings";
+    return `<div class="exposure-row">
+        <span class="exposure-category">${escapeHtml(category)}</span>
+        <span class="exposure-count">${count} ${noun}</span>
+      </div>`;
+  }).join("");
+  return `<div class="exposure-grid">${rows}</div>`;
+}
+function gradeMetadata(grade) {
+  const map = {
+    A: { color: "#2ea043", label: "Excellent" },
+    B: { color: "#388bfd", label: "Good" },
+    C: { color: "#d29922", label: "Fair" },
+    D: { color: "#db6d28", label: "Poor" },
+    F: { color: "#f85149", label: "Critical" }
+  };
+  return map[grade];
+}
+function severityColor(severity) {
+  const colors = {
+    critical: "#f85149",
+    high: "#d29922",
+    medium: "#388bfd",
+    low: "#8b949e",
+    info: "#6e7681"
+  };
+  return colors[severity];
+}
+function scoreBarColor(score) {
+  if (score >= 80) return "#2ea043";
+  if (score >= 60) return "#d29922";
+  return "#f85149";
+}
+function renderScoreBar(label, score) {
+  const color = scoreBarColor(score);
+  const pct = Math.max(0, Math.min(100, score));
+  return `
+    <div class="bar-row">
+      <span class="bar-label">${escapeHtml(label)}</span>
+      <div class="bar-track">
+        <div class="bar-fill" style="width: ${pct}%; background-color: ${color};"></div>
+      </div>
+      <span class="bar-value" style="color: ${color};">${score}/100</span>
+    </div>`;
+}
+function renderStatCard(label, value, kind) {
+  const kindColorMap = {
+    files: "#8b949e",
+    findings: "#e6edf3",
+    fixable: "#2ea043",
+    critical: "#f85149",
+    high: "#d29922",
+    medium: "#388bfd",
+    low: "#8b949e",
+    info: "#6e7681"
+  };
+  const color = kindColorMap[kind] ?? "#e6edf3";
+  return `
+    <div class="stat-card">
+      <div class="stat-value" style="color: ${color};">${escapeHtml(value)}</div>
+      <div class="stat-label">${escapeHtml(label)}</div>
+    </div>`;
+}
+function renderDistributionChart(summary) {
+  const segments = [
+    { label: "Critical", count: summary.critical, color: "#f85149" },
+    { label: "High", count: summary.high, color: "#d29922" },
+    { label: "Medium", count: summary.medium, color: "#388bfd" },
+    { label: "Low", count: summary.low, color: "#8b949e" },
+    { label: "Info", count: summary.info, color: "#6e7681" }
+  ];
+  const total = segments.reduce((acc, seg) => acc + seg.count, 0);
+  if (total === 0) {
+    return '<p class="no-findings-text">No findings to display.</p>';
+  }
+  const barWidth = 600;
+  const barHeight = 32;
+  let xOffset = 0;
+  const rects = segments.map((seg) => {
+    const width = total > 0 ? seg.count / total * barWidth : 0;
+    const rect = width > 0 ? `<rect x="${xOffset}" y="0" width="${width}" height="${barHeight}" fill="${seg.color}" rx="0" />` : "";
+    xOffset += width;
+    return rect;
+  });
+  const legend = segments.filter((seg) => seg.count > 0).map(
+    (seg) => `<span class="legend-item"><span class="legend-dot" style="background-color: ${seg.color};"></span>${escapeHtml(seg.label)}: ${seg.count}</span>`
+  ).join("");
+  return `
+    <svg class="dist-bar" viewBox="0 0 ${barWidth} ${barHeight}" preserveAspectRatio="none">
+      <rect x="0" y="0" width="${barWidth}" height="${barHeight}" fill="#21262d" rx="6" />
+      <clipPath id="bar-clip"><rect x="0" y="0" width="${barWidth}" height="${barHeight}" rx="6" /></clipPath>
+      <g clip-path="url(#bar-clip)">${rects.join("")}</g>
+    </svg>
+    <div class="legend">${legend}</div>`;
+}
+function renderFindingsGrouped(findings) {
+  const severities = ["critical", "high", "medium", "low", "info"];
+  const grouped = severities.map(
+    (sev) => [sev, findings.filter((f) => f.severity === sev)]
+  );
+  return grouped.filter(([, items]) => items.length > 0).map(([sev, items]) => {
+    const color = severityColor(sev);
+    const cards = items.map((f) => renderFindingCard(f)).join("");
+    return `
+        <div class="findings-group">
+          <h3 class="group-header" style="color: ${color};">
+            <span class="severity-dot" style="background-color: ${color};"></span>
+            ${sev.toUpperCase()} (${items.length})
+          </h3>
+          ${cards}
+        </div>`;
+  }).join("");
+}
+function renderFindingCard(finding) {
+  const color = severityColor(finding.severity);
+  const location = finding.line ? `${escapeHtml(finding.file)}:${finding.line}` : escapeHtml(finding.file);
+  const runtimeConfidenceBadge = finding.runtimeConfidence ? `<span class="runtime-confidence-badge">${escapeHtml(formatRuntimeConfidence2(finding.runtimeConfidence))}</span>` : "";
+  const evidenceBlock = finding.evidence ? `<div class="finding-evidence"><strong>Evidence:</strong><pre><code>${escapeHtml(finding.evidence)}</code></pre></div>` : "";
+  const fixBlock = finding.fix ? `<div class="finding-fix">
+        <strong>Fix:</strong> ${escapeHtml(finding.fix.description)}
+        ${finding.fix.auto ? '<span class="auto-fix-badge">auto-fixable</span>' : ""}
+        ${finding.fix.before ? `<div class="fix-diff"><div class="diff-before"><strong>Before:</strong><pre><code>${escapeHtml(finding.fix.before)}</code></pre></div><div class="diff-after"><strong>After:</strong><pre><code>${escapeHtml(finding.fix.after)}</code></pre></div></div>` : ""}
+      </div>` : "";
+  return `
+    <div class="finding-card">
+      <div class="finding-header">
+        <span class="severity-badge" style="background-color: ${color};">${finding.severity.toUpperCase()}</span>
+        ${runtimeConfidenceBadge}
+        <span class="finding-title">${escapeHtml(finding.title)}</span>
+      </div>
+      <div class="finding-meta">
+        <span class="finding-category">${escapeHtml(finding.category)}</span>
+        <span class="finding-location">${location}</span>
+      </div>
+      <p class="finding-description">${escapeHtml(finding.description)}</p>
+      ${evidenceBlock}
+      ${fixBlock}
+    </div>`;
+}
+function renderSkillHealthCard(skill) {
+  const score = typeof skill.score === "number" ? `${skill.score}/100` : "unobserved";
+  const detail = typeof skill.successRate === "number" ? `Runs ${skill.observedRuns} \u2022 Success ${Math.round(skill.successRate * 100)}%${typeof skill.averageFeedback === "number" ? ` \u2022 Feedback ${skill.averageFeedback.toFixed(1)}/5` : ""}` : "No execution history found";
+  return `
+    <div class="finding-card">
+      <div class="finding-header">
+        <span class="runtime-confidence-badge">${escapeHtml(skill.status)}</span>
+        <span class="finding-title">${escapeHtml(skill.skillName)}</span>
+      </div>
+      <div class="finding-meta">
+        <span class="finding-category">skill health</span>
+        <span class="finding-location">${escapeHtml(skill.file)}</span>
+      </div>
+      <p class="finding-description">${escapeHtml(`${score} \u2014 ${detail}`)}</p>
+    </div>`;
+}
+function renderHarnessAdapterCard(adapter) {
+  const evidence = adapter.evidence.length > 0 ? adapter.evidence.map((item) => `<code>${escapeHtml(item)}</code>`).join(", ") : "No markers";
+  return `
+    <div class="finding-card">
+      <div class="finding-header">
+        <span class="runtime-confidence-badge">${escapeHtml(adapter.confidence)}</span>
+        <span class="finding-title">${escapeHtml(adapter.name)}</span>
+      </div>
+      <div class="finding-meta">
+        <span class="finding-category">harness adapter</span>
+        <span class="finding-location">${evidence}</span>
+      </div>
+      <p class="finding-description">${escapeHtml(adapter.description)}</p>
+      <p class="finding-description"><strong>Permission concepts:</strong> ${escapeHtml(adapter.permissionConcepts.join(", "))}</p>
+      <p class="finding-description"><strong>Plugin surfaces:</strong> ${escapeHtml(adapter.pluginSurfaces.join(", "))}</p>
+    </div>`;
+}
+function formatRuntimeConfidence2(value) {
+  switch (value) {
+    case "active-runtime":
+      return "active runtime";
+    case "project-local-optional":
+      return "project-local optional";
+    case "template-example":
+      return "template/example";
+    case "docs-example":
+      return "docs/example";
+    case "plugin-manifest":
+      return "plugin manifest";
+    case "hook-code":
+      return "hook-code implementation";
+  }
+}
+function formatTimestamp(iso) {
+  try {
+    const date = new Date(iso);
+    return date.toLocaleString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      timeZoneName: "short"
+    });
+  } catch {
+    return iso;
+  }
+}
+function escapeHtml(text) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+function inlineStyles() {
+  return `
+    /* Reset & Base */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+      background-color: #0d1117;
+      color: #e6edf3;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 24px 16px;
+    }
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #161b22 0%, #0d1117 100%);
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 32px;
+      margin-bottom: 24px;
+    }
+
+    .header-content {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      flex-wrap: wrap;
+    }
+
+    .grade-badge {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 0 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .grade-letter {
+      font-size: 64px;
+      font-weight: 800;
+      color: #ffffff;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .header-info {
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .title {
+      font-size: 28px;
+      font-weight: 700;
+      color: #e6edf3;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      font-size: 20px;
+      color: #8b949e;
+      margin-bottom: 8px;
+    }
+
+    .subtitle strong {
+      color: #e6edf3;
+      font-size: 24px;
+    }
+
+    .meta {
+      font-size: 14px;
+      color: #6e7681;
+      margin-bottom: 2px;
+    }
+
+    /* Section */
+    .section {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .section-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #e6edf3;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #21262d;
+    }
+
+    /* Executive Summary */
+    .executive-summary {
+      border-color: #3d444d;
+    }
+
+    .executive-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+      gap: 12px;
+    }
+
+    .executive-card {
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .posture-card {
+      grid-row: span 2;
+    }
+
+    .executive-label {
+      display: block;
+      font-size: 12px;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .posture-title {
+      display: block;
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    .executive-copy {
+      font-size: 14px;
+      color: #8b949e;
+    }
+
+    .muted {
+      color: #8b949e;
+    }
+
+    .priority-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .priority-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 14px;
+      color: #e6edf3;
+    }
+
+    .priority-severity {
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      border-radius: 10px;
+      padding: 2px 7px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .priority-meta {
+      display: block;
+      color: #8b949e;
+      font-size: 12px;
+      margin-top: 2px;
+      overflow-wrap: anywhere;
+    }
+
+    .exposure-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .exposure-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid #21262d;
+      padding-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .exposure-row:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .exposure-category {
+      color: #e6edf3;
+      font-weight: 600;
+    }
+
+    .exposure-count {
+      color: #8b949e;
+      white-space: nowrap;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 4px;
+    }
+
+    /* Score Breakdown Bars */
+    .breakdown {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .bar-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .bar-label {
+      width: 120px;
+      font-size: 14px;
+      color: #8b949e;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .bar-track {
+      flex: 1;
+      height: 20px;
+      background: #21262d;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 10px;
+      transition: width 0.3s ease;
+    }
+
+    .bar-value {
+      width: 70px;
+      font-size: 14px;
+      font-weight: 600;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    /* Distribution */
+    .distribution {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .dist-bar {
+      width: 100%;
+      height: 32px;
+      border-radius: 6px;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #8b949e;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .no-findings-text {
+      color: #8b949e;
+      font-style: italic;
+    }
+
+    /* Findings */
+    .findings-group {
+      margin-bottom: 20px;
+    }
+
+    .group-header {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .severity-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .finding-card {
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .finding-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .severity-badge {
+      font-size: 11px;
+      font-weight: 700;
+      color: #ffffff;
+      padding: 2px 8px;
+      border-radius: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      flex-shrink: 0;
+    }
+
+    .runtime-confidence-badge {
+      font-size: 11px;
+      font-weight: 600;
+      color: #c9d1d9;
+      background: #161b22;
+      border: 1px solid #30363d;
+      padding: 2px 8px;
+      border-radius: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      flex-shrink: 0;
+    }
+
+    .finding-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #e6edf3;
+    }
+
+    .finding-meta {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .finding-category {
+      font-size: 12px;
+      color: #8b949e;
+      background: #21262d;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .finding-location {
+      font-size: 12px;
+      color: #6e7681;
+      font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+    }
+
+    .finding-description {
+      font-size: 14px;
+      color: #8b949e;
+      margin-bottom: 8px;
+    }
+
+    .finding-evidence {
+      margin-top: 8px;
+    }
+
+    .finding-evidence strong,
+    .finding-fix strong {
+      font-size: 12px;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .finding-evidence pre,
+    .fix-diff pre {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 4px;
+      overflow-x: auto;
+    }
+
+    .finding-evidence code,
+    .fix-diff code {
+      font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 13px;
+      color: #e6edf3;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .finding-fix {
+      margin-top: 12px;
+      font-size: 14px;
+      color: #8b949e;
+    }
+
+    .auto-fix-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #2ea043;
+      background: rgba(46, 160, 67, 0.15);
+      border: 1px solid rgba(46, 160, 67, 0.4);
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-left: 8px;
+    }
+
+    .fix-diff {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .diff-before strong {
+      color: #f85149;
+    }
+
+    .diff-after strong {
+      color: #2ea043;
+    }
+
+    .no-findings {
+      background: rgba(46, 160, 67, 0.1);
+      border: 1px solid rgba(46, 160, 67, 0.3);
+      border-radius: 8px;
+      padding: 24px;
+      text-align: center;
+      color: #2ea043;
+      font-size: 16px;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 24px;
+      color: #6e7681;
+      font-size: 13px;
+      border-top: 1px solid #21262d;
+      margin-top: 12px;
+    }
+
+    .footer strong {
+      color: #8b949e;
+    }
+
+    .footer-timestamp {
+      margin-top: 4px;
+      font-size: 12px;
+    }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .header-content {
+        flex-direction: column;
+        text-align: center;
+      }
+
+      .bar-label {
+        width: 80px;
+        font-size: 12px;
+      }
+
+      .bar-value {
+        width: 60px;
+        font-size: 12px;
+      }
+
+      .fix-diff {
+        grid-template-columns: 1fr;
+      }
+
+      .executive-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .posture-card {
+        grid-row: auto;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+  `;
+}
+
+// src/evidence-pack/index.ts
+var ARTIFACTS = [
+  {
+    file: "manifest.json",
+    kind: "manifest",
+    description: "Machine-readable inventory of evidence-pack artifacts."
+  },
+  {
+    file: "README.md",
+    kind: "readme",
+    description: "Human-readable guide to the bundle contents."
+  },
+  {
+    file: "agentshield-report.json",
+    kind: "scan-json",
+    description: "Primary AgentShield JSON security report."
+  },
+  {
+    file: "agentshield-report.html",
+    kind: "scan-html",
+    description: "Self-contained executive HTML report."
+  },
+  {
+    file: "agentshield-results.sarif",
+    kind: "sarif",
+    description: "SARIF 2.1.0 code-scanning report."
+  },
+  {
+    file: "policy-evaluation.json",
+    kind: "policy",
+    description: "Organization policy evaluation, or a not-run marker."
+  },
+  {
+    file: "baseline-comparison.json",
+    kind: "baseline",
+    description: "Baseline drift comparison, or a not-run marker."
+  },
+  {
+    file: "supply-chain.json",
+    kind: "supply-chain",
+    description: "MCP package provenance and supply-chain verification summary."
+  },
+  {
+    file: "remediation-plan.json",
+    kind: "remediation",
+    description: "Stable-fingerprint remediation queue for ticketing and CI handoffs."
+  }
+];
+var BUNDLE_DIGEST_EXCLUDED_FILES = /* @__PURE__ */ new Set(["manifest.json", "README.md"]);
+function writeEvidencePack(options) {
+  const outputDir = resolve3(options.outputDir);
+  const generatedAt = options.generatedAt ?? (/* @__PURE__ */ new Date()).toISOString();
+  const redacted = options.redact ?? true;
+  const redactor = createRedactor(options.report.targetPath, redacted);
+  const report = redactor.value(options.report);
+  const policyEvaluation = options.policyEvaluation ? redactor.value(options.policyEvaluation) : {
+    status: "not-run",
+    reason: "No --policy file was provided for this scan."
+  };
+  const baselineComparison = options.baselineComparison ? redactor.value(options.baselineComparison) : {
+    status: "not-run",
+    reason: "No --baseline file was provided for this scan."
+  };
+  const supplyChainReport = redactor.value(options.supplyChainReport);
+  const remediationPlan = buildRemediationPlan(report, { generatedAt });
+  const artifactContents = /* @__PURE__ */ new Map([
+    ["agentshield-report.json", normalizeText(renderJsonReport(report))],
+    ["agentshield-report.html", normalizeText(renderHtmlReport(report))],
+    [
+      "agentshield-results.sarif",
+      normalizeText(renderSarifReport(report, {
+        policyEvaluation: options.policyEvaluation ? policyEvaluation : void 0,
+        policyUri: options.policyPath ? redactor.string(options.policyPath) : void 0
+      }))
+    ],
+    ["policy-evaluation.json", normalizeText(redactor.json(policyEvaluation))],
+    ["baseline-comparison.json", normalizeText(redactor.json(baselineComparison))],
+    ["supply-chain.json", normalizeText(redactor.json(supplyChainReport))],
+    ["remediation-plan.json", normalizeText(redactor.json(remediationPlan))]
+  ]);
+  const bundleDigest = buildBundleDigest(artifactContents);
+  const readmeManifest = {
+    schemaVersion: 1,
+    generatedAt,
+    generator: "agentshield",
+    redacted,
+    targetPath: redactor.string(options.report.targetPath),
+    bundleDigest,
+    artifacts: buildArtifactManifestEntries(artifactContents)
+  };
+  artifactContents.set("README.md", normalizeText(renderReadme(readmeManifest, options)));
+  const manifest = {
+    ...readmeManifest,
+    artifacts: buildArtifactManifestEntries(artifactContents)
+  };
+  artifactContents.set("manifest.json", normalizeText(redactor.json(manifest)));
+  mkdirSync2(outputDir, { recursive: true });
+  for (const artifact of ARTIFACTS) {
+    writeText(outputDir, artifact.file, artifactContents.get(artifact.file) ?? "");
+  }
+  return {
+    outputDir,
+    files: ARTIFACTS.map((artifact) => artifact.file)
+  };
+}
+function verifyEvidencePack(outputDir) {
+  const resolvedOutputDir = resolve3(outputDir);
+  const manifestPath = resolve3(resolvedOutputDir, "manifest.json");
+  const errors = [];
+  if (!existsSync3(manifestPath)) {
+    return {
+      ok: false,
+      outputDir: resolvedOutputDir,
+      bundleDigest: null,
+      expectedBundleDigest: null,
+      artifacts: [],
+      errors: ["manifest.json is missing"]
+    };
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync2(manifestPath, "utf-8"));
+  } catch (error) {
+    return {
+      ok: false,
+      outputDir: resolvedOutputDir,
+      bundleDigest: null,
+      expectedBundleDigest: null,
+      artifacts: [],
+      errors: [`manifest.json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`]
+    };
+  }
+  const artifactContents = /* @__PURE__ */ new Map();
+  const artifacts = manifest.artifacts.map((artifact) => {
+    const artifactPath = resolve3(resolvedOutputDir, artifact.file);
+    if (artifact.file === "manifest.json") {
+      return {
+        file: artifact.file,
+        ok: artifact.sha256 === null && artifact.bytes === null,
+        expectedSha256: artifact.sha256,
+        actualSha256: null,
+        expectedBytes: artifact.bytes,
+        actualBytes: null
+      };
+    }
+    if (!existsSync3(artifactPath)) {
+      errors.push(`${artifact.file} is missing`);
+      return {
+        file: artifact.file,
+        ok: false,
+        expectedSha256: artifact.sha256,
+        actualSha256: null,
+        expectedBytes: artifact.bytes,
+        actualBytes: null
+      };
+    }
+    const content = readFileSync2(artifactPath, "utf-8");
+    artifactContents.set(artifact.file, content);
+    const actual = hashContent(content);
+    const ok = actual.sha256 === artifact.sha256 && actual.bytes === artifact.bytes;
+    if (!ok) {
+      errors.push(`${artifact.file} digest mismatch`);
+    }
+    return {
+      file: artifact.file,
+      ok,
+      expectedSha256: artifact.sha256,
+      actualSha256: actual.sha256,
+      expectedBytes: artifact.bytes,
+      actualBytes: actual.bytes
+    };
+  });
+  const bundleDigest = buildBundleDigest(artifactContents);
+  if (bundleDigest !== manifest.bundleDigest) {
+    errors.push("bundle digest mismatch");
+  }
+  return {
+    ok: errors.length === 0 && artifacts.every((artifact) => artifact.ok),
+    outputDir: resolvedOutputDir,
+    bundleDigest,
+    expectedBundleDigest: manifest.bundleDigest,
+    artifacts,
+    errors
+  };
+}
+function writeText(outputDir, fileName, content) {
+  writeFileSync2(resolve3(outputDir, fileName), normalizeText(content));
+}
+function normalizeText(content) {
+  return content.endsWith("\n") ? content : `${content}
+`;
+}
+function buildArtifactManifestEntries(artifactContents) {
+  return ARTIFACTS.map((artifact) => {
+    if (artifact.file === "manifest.json") {
+      return { ...artifact, sha256: null, bytes: null };
+    }
+    const content = artifactContents.get(artifact.file);
+    return content ? { ...artifact, ...hashContent(content) } : { ...artifact, sha256: null, bytes: null };
+  });
+}
+function buildBundleDigest(artifactContents) {
+  const bundleEntries = ARTIFACTS.filter((artifact) => !BUNDLE_DIGEST_EXCLUDED_FILES.has(artifact.file)).map((artifact) => {
+    const content = artifactContents.get(artifact.file);
+    return {
+      file: artifact.file,
+      ...content ? hashContent(content) : { sha256: null, bytes: null }
+    };
+  });
+  return `sha256:${createHash2("sha256").update(JSON.stringify(bundleEntries)).digest("hex")}`;
+}
+function hashContent(content) {
+  return {
+    sha256: createHash2("sha256").update(content).digest("hex"),
+    bytes: Buffer.byteLength(content, "utf8")
+  };
+}
+function renderReadme(manifest, options) {
+  const policyStatus = options.policyEvaluation ? options.policyEvaluation.passed ? "passed" : "failed" : "not run";
+  const baselineStatus = options.baselineComparison ? options.baselineComparison.isRegression ? "regressed" : "passed" : "not run";
+  return [
+    "# AgentShield Evidence Pack",
+    "",
+    `Generated: ${manifest.generatedAt}`,
+    `Target: ${manifest.targetPath}`,
+    `Redacted: ${manifest.redacted ? "yes" : "no"}`,
+    `Bundle digest: ${manifest.bundleDigest}`,
+    "",
+    "## Summary",
+    "",
+    `- Score: ${options.report.score.numericScore}/100 (${options.report.score.grade})`,
+    `- Findings: ${options.report.summary.totalFindings}`,
+    `- Critical: ${options.report.summary.critical}`,
+    `- High: ${options.report.summary.high}`,
+    `- Policy: ${policyStatus}`,
+    `- Baseline: ${baselineStatus}`,
+    `- Supply-chain packages: ${options.supplyChainReport.totalPackages}`,
+    `- Risky packages: ${options.supplyChainReport.riskyPackages}`,
+    "- Remediation plan: included",
+    "",
+    "## Artifacts",
+    "",
+    ...manifest.artifacts.map(
+      (artifact) => `- \`${artifact.file}\` (${artifact.kind}): ${artifact.description}`
+    ),
+    "",
+    "## Interpretation",
+    "",
+    "- Start with `agentshield-report.html` for an executive review.",
+    "- Use `agentshield-report.json` and `agentshield-results.sarif` for automation.",
+    "- Use `policy-evaluation.json` to confirm organization-policy status.",
+    "- Use `baseline-comparison.json` to review drift from the accepted baseline.",
+    "- Use `supply-chain.json` to review MCP package provenance and package risk.",
+    "- Use `remediation-plan.json` for stable-fingerprint fix queues and ticket handoffs.",
+    "",
+    "This bundle is designed for audit handoffs, buyer security reviews, and CI artifacts."
+  ].join("\n");
+}
+function createRedactor(targetPath, enabled) {
+  const replacements = enabled ? buildReplacements(targetPath) : [];
+  const redactString = (value) => {
+    if (!enabled) return value;
+    return replacements.reduce(
+      (redacted, [pattern, replacement]) => redacted.replace(pattern, replacement),
+      value
+    );
+  };
+  const redactValue = (value) => {
+    if (!enabled) return value;
+    return JSON.parse(redactString(JSON.stringify(value)));
+  };
+  return {
+    string: redactString,
+    value: redactValue,
+    json(value) {
+      return JSON.stringify(redactValue(value), null, 2);
+    }
+  };
+}
+function buildReplacements(targetPath) {
+  const home = homedir2();
+  const targetReplacements = targetPath ? [
+    [literalPattern(resolve3(targetPath)), "<target-path>"],
+    [literalPattern(targetPath), "<target-path>"]
+  ] : [];
+  const homeReplacements = home && home !== "/" ? [[literalPattern(home), "<home>"]] : [];
+  const userNames = [
+    basename3(home),
+    process.env.USER,
+    process.env.USERNAME
+  ].filter((value) => Boolean(value && value.length >= 3));
+  const userReplacements = [...new Set(userNames)].map((userName) => [new RegExp(`\\b${escapeRegExp(userName)}\\b`, "g"), "<user>"]);
+  const tokenReplacements = [
+    [/\bsk-[A-Za-z0-9_-]{12,}\b/g, "sk-<redacted>"],
+    [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{12,}\b/g, "gh_<redacted>"],
+    [/github_pat_[A-Za-z0-9_]{20,}\b/g, "<redacted-token>"],
+    [/glpat-[A-Za-z0-9_-]{12,}\b/g, "<redacted-token>"],
+    [/npm_[A-Za-z0-9]{20,}\b/g, "<redacted-token>"],
+    [/lin_api_[A-Za-z0-9]{20,}\b/g, "<redacted-token>"],
+    [/(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{12,}\b/g, "<redacted-token>"],
+    [/AIza[0-9A-Za-z_-]{20,}\b/g, "<redacted-token>"],
+    [/hf_[A-Za-z0-9]{20,}\b/g, "<redacted-token>"],
+    [/vercel_[A-Za-z0-9]{20,}\b/g, "<redacted-token>"],
+    [/AKIA[0-9A-Z]{16}\b/g, "<redacted-token>"],
+    [/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "<redacted-token>"],
+    [/\b(?:xox[baprs]|slack)-[A-Za-z0-9-]{12,}\b/g, "<redacted-token>"],
+    [/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "<redacted-email>"]
+  ];
+  return [
+    ...targetReplacements,
+    ...homeReplacements,
+    ...userReplacements,
+    ...tokenReplacements
+  ];
+}
+function literalPattern(value) {
+  return new RegExp(escapeRegExp(value), "g");
+}
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // src/action-policy.ts
 function statusForPolicyEvaluation(evaluation) {
   return evaluation.passed ? "compliant" : "non-compliant";
@@ -9871,6 +11234,23 @@ function emitAnnotations(findings) {
     }
   }
 }
+function emptySupplyChainReport() {
+  return {
+    packages: [],
+    totalPackages: 0,
+    riskyPackages: 0,
+    criticalCount: 0,
+    highCount: 0,
+    provenance: {
+      npmPackages: 0,
+      gitPackages: 0,
+      pinnedPackages: 0,
+      unpinnedPackages: 0,
+      knownGoodPackages: 0,
+      registryMetadataPackages: 0
+    }
+  };
+}
 async function run() {
   const inputPath = getInput("path", ".");
   const minSeverity = getInput("min-severity", "medium");
@@ -9881,9 +11261,11 @@ async function run() {
   const sarifOutput = getInput("sarif-output", "agentshield-results.sarif");
   const policyPath = getInput("policy", "");
   const failOnPolicy = getInput("fail-on-policy", "true") === "true";
+  const evidencePackPath = getInput("evidence-pack", "");
+  const verifyEvidencePackOutput = getInput("verify-evidence-pack", "true") === "true";
   const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
-  const targetPath = resolve2(workspace, inputPath);
-  if (!existsSync5(targetPath)) {
+  const targetPath = resolve4(workspace, inputPath);
+  if (!existsSync6(targetPath)) {
     console.log(`::error::AgentShield: Path does not exist: ${targetPath}`);
     process.exitCode = 1;
     return;
@@ -9915,11 +11297,15 @@ async function run() {
   setOutput("score-delta", "0");
   setOutput("policy-status", "not-run");
   setOutput("policy-violations", "0");
+  setOutput("evidence-pack-status", "not-run");
+  setOutput("evidence-pack-digest", "");
   let policyEvaluation = null;
   let shouldFailOnPolicy = false;
+  let baselineComparison = null;
+  let shouldFailOnBaseline = false;
   if (policyPath) {
     const { loadPolicy: loadPolicy2, evaluatePolicy: evaluatePolicy2, renderPolicyEvaluation: renderPolicyEvaluation2 } = await Promise.resolve().then(() => (init_policy(), policy_exports));
-    const resolvedPolicyPath = resolve2(workspace, policyPath);
+    const resolvedPolicyPath = resolve4(workspace, policyPath);
     const policyResult = loadPolicy2(resolvedPolicyPath);
     if (!policyResult.success) {
       setOutput("policy-status", "error");
@@ -9964,9 +11350,9 @@ async function run() {
     }
   }
   if (format === "sarif") {
-    const sarifPath = resolve2(workspace, sarifOutput);
-    mkdirSync2(dirname3(sarifPath), { recursive: true });
-    writeFileSync2(
+    const sarifPath = resolve4(workspace, sarifOutput);
+    mkdirSync4(dirname4(sarifPath), { recursive: true });
+    writeFileSync4(
       sarifPath,
       renderSarifReport(report, {
         policyEvaluation: policyEvaluation ?? void 0,
@@ -9987,16 +11373,17 @@ async function run() {
   console.log(`  Info: ${report.summary.info}`);
   if (saveBaselinePath) {
     const { saveBaseline: saveBaseline2 } = await Promise.resolve().then(() => (init_baseline(), baseline_exports));
-    const savePath = resolve2(workspace, saveBaselinePath);
+    const savePath = resolve4(workspace, saveBaselinePath);
     saveBaseline2(filteredResult.findings, report.score, savePath);
     setOutput("baseline-path", savePath);
     console.log(`Baseline saved to: ${savePath}`);
   }
   if (baselinePath) {
     const { loadBaseline: loadBaseline2, compareBaseline: compareBaseline2, evaluateGate: evaluateGate2 } = await Promise.resolve().then(() => (init_baseline(), baseline_exports));
-    const baseline = loadBaseline2(resolve2(workspace, baselinePath));
+    const baseline = loadBaseline2(resolve4(workspace, baselinePath));
     if (baseline) {
       const comparison = compareBaseline2(baseline, filteredResult.findings, report.score);
+      baselineComparison = comparison;
       setOutput("new-findings", String(comparison.newFindings.length));
       setOutput("resolved-findings", String(comparison.resolvedFindings.length));
       setOutput("unchanged-findings", String(comparison.unchangedCount));
@@ -10012,8 +11399,7 @@ async function run() {
       if (!gateResult.passed) {
         console.log("");
         console.log(`::error::AgentShield gate FAILED: ${gateResult.reasons.join("; ")}`);
-        process.exitCode = 1;
-        return;
+        shouldFailOnBaseline = true;
       } else {
         console.log("Baseline gate: PASSED");
       }
@@ -10023,7 +11409,44 @@ async function run() {
       console.log(`::warning::Could not load baseline from ${baselinePath}. Skipping comparison.`);
     }
   }
+  if (evidencePackPath) {
+    try {
+      const packPath = resolve4(workspace, evidencePackPath);
+      const pack = writeEvidencePack({
+        outputDir: packPath,
+        report,
+        policyEvaluation: policyEvaluation ?? void 0,
+        policyPath: policyPath || void 0,
+        baselineComparison: baselineComparison ?? void 0,
+        baselinePath: baselinePath || void 0,
+        supplyChainReport: emptySupplyChainReport()
+      });
+      setOutput("evidence-pack-path", pack.outputDir);
+      console.log(`Evidence pack written to: ${pack.outputDir}`);
+      if (verifyEvidencePackOutput) {
+        const verification = verifyEvidencePack(pack.outputDir);
+        setOutput("evidence-pack-status", verification.ok ? "passed" : "failed");
+        setOutput("evidence-pack-digest", verification.bundleDigest ?? "");
+        if (!verification.ok) {
+          console.log(`::error::AgentShield evidence pack verification failed: ${escapeAnnotation(verification.errors.join("; "))}`);
+          process.exitCode = 1;
+          return;
+        }
+        console.log(`Evidence pack verification: PASSED (${verification.bundleDigest})`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setOutput("evidence-pack-status", "error");
+      console.log(`::error::AgentShield evidence pack failed: ${escapeAnnotation(message)}`);
+      process.exitCode = 1;
+      return;
+    }
+  }
   if (shouldFailOnPolicy) {
+    process.exitCode = 1;
+    return;
+  }
+  if (shouldFailOnBaseline) {
     process.exitCode = 1;
     return;
   }

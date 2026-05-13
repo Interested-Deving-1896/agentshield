@@ -1,6 +1,8 @@
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 
 /**
  * The action module runs immediately on import (top-level `run().catch(...)`),
@@ -22,6 +24,7 @@ function escapeAnnotation(message: string): string {
 }
 
 const SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"] as const;
+const ACTION_PATH = resolve(process.cwd(), "dist/action.js");
 
 function severityIndex(severity: string): number {
   const idx = SEVERITY_ORDER.indexOf(severity as typeof SEVERITY_ORDER[number]);
@@ -53,6 +56,53 @@ describe("action helpers (logic verification)", () => {
     expect(actionYaml).toContain("resolved-findings:");
     expect(actionYaml).toContain("unchanged-findings:");
     expect(actionYaml).toContain("score-delta:");
+  });
+
+  it("documents evidence-pack inputs and outputs in action.yml", () => {
+    const actionYaml = readFileSync(resolve(process.cwd(), "action.yml"), "utf-8");
+
+    expect(actionYaml).toContain("evidence-pack:");
+    expect(actionYaml).toContain("verify-evidence-pack:");
+    expect(actionYaml).toContain("evidence-pack-path:");
+    expect(actionYaml).toContain("evidence-pack-status:");
+    expect(actionYaml).toContain("evidence-pack-digest:");
+    expect(actionYaml).toContain('default: "true"');
+  });
+
+  it("writes and verifies an evidence pack when requested", () => {
+    const workspace = mkdtempSync(join(tmpdir(), "agentshield-action-workspace-"));
+    const outputFile = join(workspace, "github-output.txt");
+    const summaryFile = join(workspace, "github-summary.md");
+    const evidencePackPath = "agentshield-evidence";
+
+    writeFileSync(join(workspace, "README.md"), "# Fixture\n");
+
+    const result = spawnSync(process.execPath, [ACTION_PATH], {
+      cwd: workspace,
+      env: {
+        ...process.env,
+        GITHUB_WORKSPACE: workspace,
+        GITHUB_OUTPUT: outputFile,
+        GITHUB_STEP_SUMMARY: summaryFile,
+        INPUT_PATH: ".",
+        "INPUT_FAIL-ON-FINDINGS": "false",
+        "INPUT_EVIDENCE-PACK": evidencePackPath,
+      },
+      encoding: "utf-8",
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Evidence pack verification: PASSED");
+
+    const evidenceDir = join(workspace, evidencePackPath);
+    expect(existsSync(join(evidenceDir, "manifest.json"))).toBe(true);
+    expect(existsSync(join(evidenceDir, "agentshield-report.json"))).toBe(true);
+
+    const outputs = readFileSync(outputFile, "utf-8");
+    expect(outputs).toContain(`evidence-pack-path=${evidenceDir}`);
+    expect(outputs).toContain("evidence-pack-status=passed");
+    expect(outputs).toMatch(/evidence-pack-digest=sha256:[a-f0-9]{64}/);
   });
 
   describe("escapeAnnotation", () => {
