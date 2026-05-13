@@ -88,6 +88,8 @@ High-value `scan` options:
 - `--supply-chain`
 - `--supply-chain-online`
 - `--policy <path>`
+- `--evidence-pack <dir>`
+- `--no-evidence-redact`
 - `--min-severity critical|high|medium|low|info`
 - `--log <path>`
 - `--log-format ndjson|json`
@@ -171,6 +173,18 @@ agentshield baseline write --path .claude --output .github/agentshield-baseline.
 
 Add `--json` to emit parseable metadata with `baselinePath`, `targetPath`,
 `score`, `grade`, `findings`, and `minSeverity`.
+
+Evidence packs are available through:
+
+```bash
+agentshield scan --evidence-pack ./agentshield-evidence
+```
+
+The evidence-pack directory is deterministic and contains `manifest.json`,
+`README.md`, `agentshield-report.json`, `agentshield-report.html`,
+`agentshield-results.sarif`, `policy-evaluation.json`,
+`baseline-comparison.json`, and `supply-chain.json`. Local path, username,
+email, and token-shaped string redaction is enabled by default.
 
 Top-level shape:
 
