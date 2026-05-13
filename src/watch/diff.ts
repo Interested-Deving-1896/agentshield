@@ -1,13 +1,8 @@
+import { fingerprintFinding } from "../fingerprint.js";
 import type { Finding, SecurityScore } from "../types.js";
 import type { ScanBaseline, DriftResult } from "./types.js";
 
-/**
- * Generate a fingerprint for a finding that stays stable across scans.
- * Uses id + file + evidence to avoid false drift from ordering changes.
- */
-export function fingerprintFinding(finding: Finding): string {
-  return `${finding.id}::${finding.file}::${finding.evidence ?? ""}`;
-}
+export { fingerprintFinding } from "../fingerprint.js";
 
 /**
  * Create a baseline snapshot from a scan result.

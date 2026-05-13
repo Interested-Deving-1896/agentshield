@@ -8957,6 +8957,26 @@ var init_terminal = __esm({
   }
 });
 
+// src/fingerprint.ts
+import { createHash } from "crypto";
+function fingerprintFinding(finding) {
+  return `${finding.id}::${finding.file}::${evidenceFingerprint(finding.evidence)}`;
+}
+function legacyEvidenceFingerprint(finding) {
+  return `${finding.id}::${finding.file}::${finding.evidence ?? ""}`;
+}
+function evidenceFingerprint(evidence) {
+  if (!evidence) {
+    return "sha256:no-evidence";
+  }
+  return `sha256:${createHash("sha256").update(evidence).digest("hex").slice(0, 16)}`;
+}
+var init_fingerprint = __esm({
+  "src/fingerprint.ts"() {
+    "use strict";
+  }
+});
+
 // src/remediation/index.ts
 var remediation_exports = {};
 __export(remediation_exports, {
@@ -8964,7 +8984,6 @@ __export(remediation_exports, {
   writeRemediationPlan: () => writeRemediationPlan
 });
 import { mkdirSync, writeFileSync } from "fs";
-import { createHash } from "crypto";
 import { dirname as dirname2, resolve as resolve2 } from "path";
 function buildRemediationPlan(report, options = {}) {
   const findings = [...report.findings].sort(compareFindings).map((finding) => toPlanFinding(finding));
@@ -9001,7 +9020,7 @@ function writeRemediationPlan(options) {
 function toPlanFinding(finding) {
   const autoFixable = finding.fix?.auto === true;
   return {
-    fingerprint: fingerprintFindingForPlan(finding),
+    fingerprint: fingerprintFinding(finding),
     id: finding.id,
     severity: finding.severity,
     category: finding.category,
@@ -9019,10 +9038,6 @@ function toPlanFinding(finding) {
     } : void 0
   };
 }
-function fingerprintFindingForPlan(finding) {
-  const evidenceHash = finding.evidence ? createHash("sha256").update(finding.evidence).digest("hex").slice(0, 16) : "no-evidence";
-  return `${finding.id}::${finding.file}::sha256:${evidenceHash}`;
-}
 function countBySeverity(findings) {
   const counts = { ...ZERO_BY_SEVERITY };
   for (const finding of findings) {
@@ -9037,6 +9052,7 @@ var ZERO_BY_SEVERITY, SEVERITY_RANK;
 var init_remediation = __esm({
   "src/remediation/index.ts"() {
     "use strict";
+    init_fingerprint();
     ZERO_BY_SEVERITY = {
       critical: 0,
       high: 0,
@@ -12222,9 +12238,6 @@ var init_types2 = __esm({
 import { readFileSync as readFileSync8, writeFileSync as writeFileSync6, existsSync as existsSync11 } from "fs";
 import { dirname as dirname5 } from "path";
 import { mkdirSync as mkdirSync6 } from "fs";
-function fingerprintFinding2(finding) {
-  return `${finding.id}::${finding.file}::${finding.evidence ?? ""}`;
-}
 function saveBaseline(findings, score, outputPath) {
   const serialized = {
     version: 1,
@@ -12236,8 +12249,7 @@ function saveBaseline(findings, score, outputPath) {
       category: f.category,
       title: f.title,
       file: f.file,
-      evidence: f.evidence,
-      fingerprint: fingerprintFinding2(f)
+      fingerprint: fingerprintFinding(f)
     }))
   };
   const dir = dirname5(outputPath);
@@ -12261,16 +12273,19 @@ function loadBaseline(baselinePath) {
 }
 function compareBaseline(baseline2, currentFindings, currentScore) {
   const baselineFingerprints = new Set(
-    baseline2.findings.map((f) => f.fingerprint)
+    baseline2.findings.flatMap((finding) => baselineFingerprintsFor(finding))
   );
   const currentFingerprints = new Set(
-    currentFindings.map(fingerprintFinding2)
+    currentFindings.flatMap((finding) => [
+      fingerprintFinding(finding),
+      legacyEvidenceFingerprint(finding)
+    ])
   );
   const newFindings = currentFindings.filter(
-    (f) => !baselineFingerprints.has(fingerprintFinding2(f))
+    (f) => !baselineFingerprints.has(fingerprintFinding(f))
   );
   const resolvedFindings = baseline2.findings.filter(
-    (f) => !currentFingerprints.has(f.fingerprint)
+    (f) => baselineFingerprintsFor(f).every((fingerprint) => !currentFingerprints.has(fingerprint))
   );
   const unchangedCount = currentFindings.length - newFindings.length;
   const scoreDelta = currentScore.numericScore - baseline2.score.numericScore;
@@ -12294,6 +12309,14 @@ function compareBaseline(baseline2, currentFindings, currentScore) {
     newCriticalCount,
     newHighCount
   };
+}
+function baselineFingerprintsFor(finding) {
+  const fingerprints = /* @__PURE__ */ new Set([finding.fingerprint]);
+  if (finding.evidence !== void 0) {
+    fingerprints.add(fingerprintFinding(finding));
+    fingerprints.add(legacyEvidenceFingerprint(finding));
+  }
+  return [...fingerprints];
 }
 function evaluateGate(comparison, config = DEFAULT_GATE_CONFIG) {
   const reasons = [];
@@ -12376,7 +12399,9 @@ function renderGateResult(result) {
 var init_compare = __esm({
   "src/baseline/compare.ts"() {
     "use strict";
+    init_fingerprint();
     init_types2();
+    init_fingerprint();
   }
 });
 
@@ -12386,7 +12411,7 @@ __export(baseline_exports, {
   DEFAULT_GATE_CONFIG: () => DEFAULT_GATE_CONFIG,
   compareBaseline: () => compareBaseline,
   evaluateGate: () => evaluateGate,
-  fingerprintFinding: () => fingerprintFinding2,
+  fingerprintFinding: () => fingerprintFinding,
   loadBaseline: () => loadBaseline,
   renderComparison: () => renderComparison,
   renderGateResult: () => renderGateResult,
@@ -16499,9 +16524,8 @@ import { watch, existsSync as existsSync5, readdirSync as readdirSync2, statSync
 import { resolve as resolve7 } from "path";
 
 // src/watch/diff.ts
-function fingerprintFinding(finding) {
-  return `${finding.id}::${finding.file}::${finding.evidence ?? ""}`;
-}
+init_fingerprint();
+init_fingerprint();
 function createBaseline(findings, score) {
   const findingIds = new Set(findings.map(fingerprintFinding));
   return {

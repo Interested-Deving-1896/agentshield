@@ -73,14 +73,15 @@ function cleanup(): void {
 afterEach(cleanup);
 
 describe("fingerprintFinding", () => {
-  it("generates stable fingerprint", () => {
+  it("generates stable hashed fingerprint", () => {
     const f = makeFinding({ id: "X", file: "y.json", evidence: "z" });
-    expect(fingerprintFinding(f)).toBe("X::y.json::z");
+    expect(fingerprintFinding(f)).toMatch(/^X::y\.json::sha256:[a-f0-9]{16}$/);
+    expect(fingerprintFinding(f)).not.toContain("::z");
   });
 
   it("handles missing evidence", () => {
     const f = makeFinding({ id: "X", file: "y.json", evidence: undefined });
-    expect(fingerprintFinding(f)).toBe("X::y.json::");
+    expect(fingerprintFinding(f)).toBe("X::y.json::sha256:no-evidence");
   });
 });
 
@@ -98,7 +99,10 @@ describe("saveBaseline / loadBaseline", () => {
     expect(loaded!.version).toBe(1);
     expect(loaded!.score.numericScore).toBe(85);
     expect(loaded!.findings).toHaveLength(1);
-    expect(loaded!.findings[0].fingerprint).toBe("R1::a.json::ev1");
+    expect(loaded!.findings[0].fingerprint).toMatch(
+      /^R1::a\.json::sha256:[a-f0-9]{16}$/
+    );
+    expect(loaded!.findings[0]).not.toHaveProperty("evidence");
   });
 
   it("creates parent directories", () => {
@@ -144,6 +148,19 @@ describe("compareBaseline", () => {
     expect(result.isRegression).toBe(true);
     expect(result.scoreDelta).toBe(-10);
     expect(result.newHighCount).toBe(1);
+  });
+
+  it("keeps old raw-evidence baselines comparable", () => {
+    const baseline = makeBaseline();
+    const currentFindings = [
+      makeFinding({ id: "R1", file: "a.json", evidence: "ev1" }),
+    ];
+
+    const result = compareBaseline(baseline, currentFindings, makeScore());
+
+    expect(result.newFindings).toHaveLength(0);
+    expect(result.resolvedFindings).toHaveLength(0);
+    expect(result.unchangedCount).toBe(1);
   });
 
   it("detects resolved findings", () => {
