@@ -8812,6 +8812,26 @@ function renderCorpusResults(result) {
     }
     lines.push("");
   }
+  if (result.accuracyRecommendations.length > 0) {
+    lines.push(chalk.bold("  Accuracy Improvement Plan"));
+    lines.push("");
+    for (const recommendation of result.accuracyRecommendations) {
+      const priority = recommendation.priority.toUpperCase();
+      const rate2 = (recommendation.detectionRate * 100).toFixed(0);
+      const priorityColor = recommendation.priority === "critical" ? chalk.red : recommendation.priority === "high" ? chalk.yellow : chalk.cyan;
+      lines.push(
+        `    ${priorityColor(`${priority} ${recommendation.category}`)} (${recommendation.missedConfigs}/${recommendation.totalConfigs} missed, ${rate2}% detected)`
+      );
+      if (recommendation.missingRules.length > 0) {
+        lines.push(chalk.dim(`      Missing rules: ${recommendation.missingRules.join(", ")}`));
+      }
+      if (recommendation.configIds.length > 0) {
+        lines.push(chalk.dim(`      Configs: ${recommendation.configIds.join(", ")}`));
+      }
+      lines.push(chalk.dim(`      Action: ${recommendation.action}`));
+    }
+    lines.push("");
+  }
   return lines.join("\n");
 }
 function renderDeepScanSummary(result) {
@@ -11480,6 +11500,7 @@ function validateCorpus(ruleScanFn, rules) {
     detectionRate,
     readyForRegressionGate: failed === 0,
     categoryBreakdown: buildCategoryBreakdown(results),
+    accuracyRecommendations: buildAccuracyRecommendations(results),
     results
   };
 }
@@ -11507,6 +11528,7 @@ function evaluateCorpusGate(validation, options = {}) {
     detectionRate: validation.detectionRate,
     failedConfigs,
     failedCategories,
+    accuracyRecommendations: validation.accuracyRecommendations,
     reasons
   };
 }
@@ -11569,6 +11591,69 @@ function buildCategoryBreakdown(results) {
       detectionRate: counts.total > 0 ? counts.detected / counts.total : 1
     };
   });
+}
+function buildAccuracyRecommendations(results) {
+  const failedByCategory = /* @__PURE__ */ new Map();
+  for (const result of results) {
+    if (result.passed) {
+      continue;
+    }
+    const current = failedByCategory.get(result.category) ?? [];
+    current.push(result);
+    failedByCategory.set(result.category, current);
+  }
+  return [...failedByCategory.entries()].map(([category, failedResults]) => {
+    const categoryResults = results.filter((result) => result.category === category);
+    const totalConfigs = categoryResults.length;
+    const missedConfigs = failedResults.length;
+    const detected = totalConfigs - missedConfigs;
+    const detectionRate = totalConfigs > 0 ? detected / totalConfigs : 1;
+    const missingRules = uniqueValues(
+      failedResults.flatMap((result) => result.missingRules.map(parseMissingRuleId))
+    );
+    const configIds = failedResults.map((result) => result.configId);
+    return {
+      category,
+      priority: priorityForCorpusGap(detectionRate, missedConfigs),
+      missedConfigs,
+      totalConfigs,
+      detectionRate,
+      configIds,
+      missingRules,
+      action: buildAccuracyRecommendationAction(category, missingRules, configIds)
+    };
+  }).sort(
+    (left, right) => priorityRank(left.priority) - priorityRank(right.priority) || right.missedConfigs - left.missedConfigs || left.detectionRate - right.detectionRate || left.category.localeCompare(right.category)
+  );
+}
+function parseMissingRuleId(missingRule) {
+  return missingRule.split(" ")[0] ?? missingRule;
+}
+function uniqueValues(values) {
+  return [...new Set(values.filter(Boolean))].sort();
+}
+function priorityForCorpusGap(detectionRate, missedConfigs) {
+  if (detectionRate === 0 || missedConfigs >= 3) {
+    return "critical";
+  }
+  if (detectionRate < 0.8 || missedConfigs >= 2) {
+    return "high";
+  }
+  return "medium";
+}
+function priorityRank(priority) {
+  switch (priority) {
+    case "critical":
+      return 0;
+    case "high":
+      return 1;
+    case "medium":
+      return 2;
+  }
+}
+function buildAccuracyRecommendationAction(category, missingRules, configIds) {
+  const ruleScope = missingRules.length > 0 ? `missing rule coverage for ${missingRules.join(", ")}` : `missed configs ${configIds.join(", ")}`;
+  return `Improve ${category} corpus coverage by adding or fixing scanner fixtures and rules for ${ruleScope}.`;
 }
 function formatRate(rate) {
   return `${(rate * 100).toFixed(1)}%`;
@@ -17259,6 +17344,7 @@ async function runCorpusValidation(_targetPath) {
       detectionRate: totalAttacks > 0 ? detected / totalAttacks : 0,
       readyForRegressionGate: validation.readyForRegressionGate,
       categoryBreakdown: validation.categoryBreakdown,
+      accuracyRecommendations: validation.accuracyRecommendations,
       results: validation.results.map((r) => ({
         attackId: r.configId,
         attackName: r.configName,

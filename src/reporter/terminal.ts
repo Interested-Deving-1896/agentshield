@@ -425,6 +425,30 @@ export function renderCorpusResults(
     lines.push("");
   }
 
+  if (result.accuracyRecommendations.length > 0) {
+    lines.push(chalk.bold("  Accuracy Improvement Plan"));
+    lines.push("");
+    for (const recommendation of result.accuracyRecommendations) {
+      const priority = recommendation.priority.toUpperCase();
+      const rate = (recommendation.detectionRate * 100).toFixed(0);
+      const priorityColor = recommendation.priority === "critical" ? chalk.red
+        : recommendation.priority === "high" ? chalk.yellow
+        : chalk.cyan;
+      lines.push(
+        `    ${priorityColor(`${priority} ${recommendation.category}`)} ` +
+        `(${recommendation.missedConfigs}/${recommendation.totalConfigs} missed, ${rate}% detected)`
+      );
+      if (recommendation.missingRules.length > 0) {
+        lines.push(chalk.dim(`      Missing rules: ${recommendation.missingRules.join(", ")}`));
+      }
+      if (recommendation.configIds.length > 0) {
+        lines.push(chalk.dim(`      Configs: ${recommendation.configIds.join(", ")}`));
+      }
+      lines.push(chalk.dim(`      Action: ${recommendation.action}`));
+    }
+    lines.push("");
+  }
+
   return lines.join("\n");
 }
 

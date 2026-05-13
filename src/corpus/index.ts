@@ -26,6 +26,19 @@ export interface CorpusCategoryBreakdown {
   readonly detectionRate: number;
 }
 
+export type CorpusAccuracyPriority = "critical" | "high" | "medium";
+
+export interface CorpusAccuracyRecommendation {
+  readonly category: string;
+  readonly priority: CorpusAccuracyPriority;
+  readonly missedConfigs: number;
+  readonly totalConfigs: number;
+  readonly detectionRate: number;
+  readonly configIds: ReadonlyArray<string>;
+  readonly missingRules: ReadonlyArray<string>;
+  readonly action: string;
+}
+
 export interface CorpusValidation {
   readonly totalConfigs: number;
   readonly passed: number;
@@ -33,6 +46,7 @@ export interface CorpusValidation {
   readonly detectionRate: number;
   readonly readyForRegressionGate: boolean;
   readonly categoryBreakdown: ReadonlyArray<CorpusCategoryBreakdown>;
+  readonly accuracyRecommendations: ReadonlyArray<CorpusAccuracyRecommendation>;
   readonly results: ReadonlyArray<CorpusValidationResult>;
 }
 
@@ -46,6 +60,7 @@ export interface CorpusGateResult {
   readonly detectionRate: number;
   readonly failedConfigs: ReadonlyArray<CorpusValidationResult>;
   readonly failedCategories: ReadonlyArray<CorpusCategoryBreakdown>;
+  readonly accuracyRecommendations: ReadonlyArray<CorpusAccuracyRecommendation>;
   readonly reasons: ReadonlyArray<string>;
 }
 
@@ -96,6 +111,7 @@ export function validateCorpus(ruleScanFn: RuleScanFn, rules: ReadonlyArray<Rule
     detectionRate,
     readyForRegressionGate: failed === 0,
     categoryBreakdown: buildCategoryBreakdown(results),
+    accuracyRecommendations: buildAccuracyRecommendations(results),
     results,
   };
 }
@@ -138,6 +154,7 @@ export function evaluateCorpusGate(
     detectionRate: validation.detectionRate,
     failedConfigs,
     failedCategories,
+    accuracyRecommendations: validation.accuracyRecommendations,
     reasons,
   };
 }
@@ -225,6 +242,98 @@ function buildCategoryBreakdown(
         detectionRate: counts.total > 0 ? counts.detected / counts.total : 1,
       };
     });
+}
+
+function buildAccuracyRecommendations(
+  results: ReadonlyArray<CorpusValidationResult>
+): ReadonlyArray<CorpusAccuracyRecommendation> {
+  const failedByCategory = new Map<string, CorpusValidationResult[]>();
+
+  for (const result of results) {
+    if (result.passed) {
+      continue;
+    }
+
+    const current = failedByCategory.get(result.category) ?? [];
+    current.push(result);
+    failedByCategory.set(result.category, current);
+  }
+
+  return [...failedByCategory.entries()]
+    .map(([category, failedResults]) => {
+      const categoryResults = results.filter((result) => result.category === category);
+      const totalConfigs = categoryResults.length;
+      const missedConfigs = failedResults.length;
+      const detected = totalConfigs - missedConfigs;
+      const detectionRate = totalConfigs > 0 ? detected / totalConfigs : 1;
+      const missingRules = uniqueValues(
+        failedResults.flatMap((result) => result.missingRules.map(parseMissingRuleId))
+      );
+      const configIds = failedResults.map((result) => result.configId);
+
+      return {
+        category,
+        priority: priorityForCorpusGap(detectionRate, missedConfigs),
+        missedConfigs,
+        totalConfigs,
+        detectionRate,
+        configIds,
+        missingRules,
+        action: buildAccuracyRecommendationAction(category, missingRules, configIds),
+      } satisfies CorpusAccuracyRecommendation;
+    })
+    .sort((left, right) =>
+      priorityRank(left.priority) - priorityRank(right.priority) ||
+      right.missedConfigs - left.missedConfigs ||
+      left.detectionRate - right.detectionRate ||
+      left.category.localeCompare(right.category)
+    );
+}
+
+function parseMissingRuleId(missingRule: string): string {
+  return missingRule.split(" ")[0] ?? missingRule;
+}
+
+function uniqueValues(values: ReadonlyArray<string>): string[] {
+  return [...new Set(values.filter(Boolean))].sort();
+}
+
+function priorityForCorpusGap(
+  detectionRate: number,
+  missedConfigs: number
+): CorpusAccuracyPriority {
+  if (detectionRate === 0 || missedConfigs >= 3) {
+    return "critical";
+  }
+
+  if (detectionRate < 0.8 || missedConfigs >= 2) {
+    return "high";
+  }
+
+  return "medium";
+}
+
+function priorityRank(priority: CorpusAccuracyPriority): number {
+  switch (priority) {
+    case "critical":
+      return 0;
+    case "high":
+      return 1;
+    case "medium":
+      return 2;
+  }
+}
+
+function buildAccuracyRecommendationAction(
+  category: string,
+  missingRules: ReadonlyArray<string>,
+  configIds: ReadonlyArray<string>
+): string {
+  const ruleScope = missingRules.length > 0
+    ? `missing rule coverage for ${missingRules.join(", ")}`
+    : `missed configs ${configIds.join(", ")}`;
+
+  return `Improve ${category} corpus coverage by adding or fixing scanner fixtures and rules for ${ruleScope}.`;
 }
 
 function formatRate(rate: number): string {

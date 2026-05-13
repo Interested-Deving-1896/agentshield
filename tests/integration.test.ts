@@ -167,6 +167,18 @@ function makeCorpusResult(
       { category: "secrets", totalConfigs: 1, detected: 1, missed: 0, detectionRate: 1 },
       { category: "injection", totalConfigs: 2, detected: 1, missed: 1, detectionRate: 0.5 },
     ],
+    accuracyRecommendations: [
+      {
+        category: "injection",
+        priority: "high",
+        missedConfigs: 1,
+        totalConfigs: 2,
+        detectionRate: 0.5,
+        configIds: ["ATK-050"],
+        missingRules: ["prompt-injection-hidden-instructions"],
+        action: "Improve injection corpus coverage for prompt-injection-hidden-instructions."
+      },
+    ],
     results: [
       { attackId: "ATK-001", attackName: "Hardcoded API key", detected: true, ruleId: "SEC-001" },
       { attackId: "ATK-002", attackName: "Bash(*) wildcard", detected: true, ruleId: "PERM-001" },
@@ -368,6 +380,9 @@ describe("integration", () => {
       expect(output).toContain("Regression gate: FAILED");
       expect(output).toContain("Missed Attacks");
       expect(output).toContain("Indirect prompt injection");
+      expect(output).toContain("Accuracy Improvement Plan");
+      expect(output).toContain("HIGH injection");
+      expect(output).toContain("prompt-injection-hidden-instructions");
     });
 
     it("renderCorpusResults handles perfect detection", () => {
@@ -380,6 +395,7 @@ describe("integration", () => {
         categoryBreakdown: [
           { category: "injection", totalConfigs: 10, detected: 10, missed: 0, detectionRate: 1 },
         ],
+        accuracyRecommendations: [],
         results: [
           { attackId: "ATK-001", attackName: "Test", detected: true, ruleId: "R-001" },
         ],
@@ -504,6 +520,7 @@ describe("integration", () => {
       expect(result.totalAttacks).toBe(50);
       expect(result.detectionRate).toBe(0.94);
       expect(result.categoryBreakdown[0].category).toBe("secrets");
+      expect(result.accuracyRecommendations[0].category).toBe("injection");
       expect(result.readyForRegressionGate).toBe(false);
     });
 
