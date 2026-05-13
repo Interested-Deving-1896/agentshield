@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -143,12 +144,32 @@ describe("writeEvidencePack", () => {
       targetPath: "<target-path>",
     });
     expect(manifest.artifacts.map((artifact: { file: string }) => artifact.file)).toEqual(result.files);
+    expect(manifest.bundleDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(manifest.artifacts).toEqual(
+      expect.arrayContaining(
+        result.files
+          .filter((file) => file !== "manifest.json")
+          .map((file) => expect.objectContaining({
+            file,
+            sha256: createHash("sha256")
+              .update(readFileSync(join(outputDir, file), "utf-8"))
+              .digest("hex"),
+            bytes: Buffer.byteLength(readFileSync(join(outputDir, file), "utf-8"), "utf8"),
+          }))
+      )
+    );
+    expect(manifest.artifacts.find((artifact: { file: string }) => artifact.file === "manifest.json")).toMatchObject({
+      file: "manifest.json",
+      sha256: null,
+      bytes: null,
+    });
 
     const readme = readFileSync(join(outputDir, "README.md"), "utf-8");
     expect(readme).toContain("# AgentShield Evidence Pack");
     expect(readme).toContain("Policy: failed");
     expect(readme).toContain("Baseline: regressed");
     expect(readme).toContain("Remediation plan");
+    expect(readme).toContain("Bundle digest:");
 
     const remediationPlan = JSON.parse(readFileSync(join(outputDir, "remediation-plan.json"), "utf-8"));
     expect(remediationPlan.summary.totalFindings).toBe(1);

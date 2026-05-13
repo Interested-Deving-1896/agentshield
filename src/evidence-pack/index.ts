@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -33,11 +34,8 @@ interface EvidencePackManifest {
   readonly generator: "agentshield";
   readonly redacted: boolean;
   readonly targetPath: string;
-  readonly artifacts: ReadonlyArray<{
-    readonly file: string;
-    readonly kind: string;
-    readonly description: string;
-  }>;
+  readonly bundleDigest: string;
+  readonly artifacts: ReadonlyArray<EvidencePackArtifactManifestEntry>;
 }
 
 const ARTIFACTS = [
@@ -88,6 +86,15 @@ const ARTIFACTS = [
   },
 ] as const;
 
+type EvidencePackArtifactDefinition = (typeof ARTIFACTS)[number];
+
+type EvidencePackArtifactManifestEntry = EvidencePackArtifactDefinition & {
+  readonly sha256: string | null;
+  readonly bytes: number | null;
+};
+
+const BUNDLE_DIGEST_EXCLUDED_FILES = new Set(["manifest.json", "README.md"]);
+
 export function writeEvidencePack(options: EvidencePackOptions): EvidencePackResult {
   const outputDir = resolve(options.outputDir);
   const generatedAt = options.generatedAt ?? new Date().toISOString();
@@ -108,33 +115,43 @@ export function writeEvidencePack(options: EvidencePackOptions): EvidencePackRes
       };
   const supplyChainReport = redactor.value(options.supplyChainReport);
   const remediationPlan = buildRemediationPlan(report, { generatedAt });
-  const manifest: EvidencePackManifest = {
+  const artifactContents = new Map<string, string>([
+    ["agentshield-report.json", normalizeText(renderJsonReport(report))],
+    ["agentshield-report.html", normalizeText(renderHtmlReport(report))],
+    [
+      "agentshield-results.sarif",
+      normalizeText(renderSarifReport(report, {
+        policyEvaluation: options.policyEvaluation ? (policyEvaluation as PolicyEvaluation) : undefined,
+        policyUri: options.policyPath ? redactor.string(options.policyPath) : undefined,
+      })),
+    ],
+    ["policy-evaluation.json", normalizeText(redactor.json(policyEvaluation))],
+    ["baseline-comparison.json", normalizeText(redactor.json(baselineComparison))],
+    ["supply-chain.json", normalizeText(redactor.json(supplyChainReport))],
+    ["remediation-plan.json", normalizeText(redactor.json(remediationPlan))],
+  ]);
+  const bundleDigest = buildBundleDigest(artifactContents);
+  const readmeManifest: EvidencePackManifest = {
     schemaVersion: 1,
     generatedAt,
     generator: "agentshield",
     redacted,
     targetPath: redactor.string(options.report.targetPath),
-    artifacts: ARTIFACTS,
+    bundleDigest,
+    artifacts: buildArtifactManifestEntries(artifactContents),
   };
+  artifactContents.set("README.md", normalizeText(renderReadme(readmeManifest, options)));
+  const manifest: EvidencePackManifest = {
+    ...readmeManifest,
+    artifacts: buildArtifactManifestEntries(artifactContents),
+  };
+  artifactContents.set("manifest.json", normalizeText(redactor.json(manifest)));
 
   mkdirSync(outputDir, { recursive: true });
 
-  writeText(outputDir, "manifest.json", redactor.json(manifest));
-  writeText(outputDir, "README.md", renderReadme(manifest, options));
-  writeText(outputDir, "agentshield-report.json", renderJsonReport(report));
-  writeText(outputDir, "agentshield-report.html", renderHtmlReport(report));
-  writeText(
-    outputDir,
-    "agentshield-results.sarif",
-    renderSarifReport(report, {
-      policyEvaluation: options.policyEvaluation ? (policyEvaluation as PolicyEvaluation) : undefined,
-      policyUri: options.policyPath ? redactor.string(options.policyPath) : undefined,
-    })
-  );
-  writeText(outputDir, "policy-evaluation.json", redactor.json(policyEvaluation));
-  writeText(outputDir, "baseline-comparison.json", redactor.json(baselineComparison));
-  writeText(outputDir, "supply-chain.json", redactor.json(supplyChainReport));
-  writeText(outputDir, "remediation-plan.json", redactor.json(remediationPlan));
+  for (const artifact of ARTIFACTS) {
+    writeText(outputDir, artifact.file, artifactContents.get(artifact.file) ?? "");
+  }
 
   return {
     outputDir,
@@ -143,7 +160,46 @@ export function writeEvidencePack(options: EvidencePackOptions): EvidencePackRes
 }
 
 function writeText(outputDir: string, fileName: string, content: string): void {
-  writeFileSync(resolve(outputDir, fileName), content.endsWith("\n") ? content : `${content}\n`);
+  writeFileSync(resolve(outputDir, fileName), normalizeText(content));
+}
+
+function normalizeText(content: string): string {
+  return content.endsWith("\n") ? content : `${content}\n`;
+}
+
+function buildArtifactManifestEntries(
+  artifactContents: ReadonlyMap<string, string>
+): EvidencePackManifest["artifacts"] {
+  return ARTIFACTS.map((artifact) => {
+    if (artifact.file === "manifest.json") {
+      return { ...artifact, sha256: null, bytes: null };
+    }
+
+    const content = artifactContents.get(artifact.file);
+    return content
+      ? { ...artifact, ...hashContent(content) }
+      : { ...artifact, sha256: null, bytes: null };
+  });
+}
+
+function buildBundleDigest(artifactContents: ReadonlyMap<string, string>): string {
+  const bundleEntries = ARTIFACTS
+    .filter((artifact) => !BUNDLE_DIGEST_EXCLUDED_FILES.has(artifact.file))
+    .map((artifact) => {
+      const content = artifactContents.get(artifact.file);
+      return {
+        file: artifact.file,
+        ...(content ? hashContent(content) : { sha256: null, bytes: null }),
+      };
+    });
+  return `sha256:${createHash("sha256").update(JSON.stringify(bundleEntries)).digest("hex")}`;
+}
+
+function hashContent(content: string): { readonly sha256: string; readonly bytes: number } {
+  return {
+    sha256: createHash("sha256").update(content).digest("hex"),
+    bytes: Buffer.byteLength(content, "utf8"),
+  };
 }
 
 function renderReadme(
@@ -163,6 +219,7 @@ function renderReadme(
     `Generated: ${manifest.generatedAt}`,
     `Target: ${manifest.targetPath}`,
     `Redacted: ${manifest.redacted ? "yes" : "no"}`,
+    `Bundle digest: ${manifest.bundleDigest}`,
     "",
     "## Summary",
     "",
