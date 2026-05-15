@@ -71,6 +71,46 @@ describe("discoverConfigFiles", () => {
     expect(result.files.some((f) => f.type === "hook-script")).toBe(true);
   });
 
+  it("discovers VS Code task and setup files as automation surfaces", () => {
+    const dir = createTempDir();
+    mkdirSync(join(dir, ".vscode"));
+    writeFileSync(join(dir, ".vscode", "tasks.json"), '{"version":"2.0.0","tasks":[]}');
+    writeFileSync(join(dir, ".vscode", "setup.mjs"), "console.log('setup');");
+
+    const result = discoverConfigFiles(dir);
+    expect(
+      result.files.some((f) => f.path === ".vscode/tasks.json" && f.type === "settings-json")
+    ).toBe(true);
+    expect(
+      result.files.some((f) => f.path === ".vscode/setup.mjs" && f.type === "hook-code")
+    ).toBe(true);
+  });
+
+  it("discovers Mini Shai-Hulud persistence artifacts in AI tool and OS startup paths", () => {
+    const dir = createTempDir();
+    mkdirSync(join(dir, ".claude"));
+    mkdirSync(join(dir, ".config/systemd/user"), { recursive: true });
+    mkdirSync(join(dir, "Library/LaunchAgents"), { recursive: true });
+    writeFileSync(join(dir, ".claude", "router_runtime.js"), "console.log('runtime');");
+    writeFileSync(join(dir, ".config/systemd/user/gh-token-monitor.service"), "[Service]");
+    writeFileSync(join(dir, "Library/LaunchAgents/com.user.gh-token-monitor.plist"), "<plist/>");
+
+    const result = discoverConfigFiles(dir);
+    expect(
+      result.files.some((f) => f.path === ".claude/router_runtime.js" && f.type === "hook-code")
+    ).toBe(true);
+    expect(
+      result.files.some(
+        (f) => f.path === ".config/systemd/user/gh-token-monitor.service" && f.type === "hook-script"
+      )
+    ).toBe(true);
+    expect(
+      result.files.some(
+        (f) => f.path === "Library/LaunchAgents/com.user.gh-token-monitor.plist" && f.type === "settings-json"
+      )
+    ).toBe(true);
+  });
+
   it("discovers executable scripts referenced from hooks/hooks.json manifests", () => {
     const dir = createTempDir();
     mkdirSync(join(dir, "hooks"));

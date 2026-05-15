@@ -302,6 +302,18 @@ function isCommentOnlyShellMatch(content: string, index: number): boolean {
   return line.startsWith("#");
 }
 
+function isCommentOnlyAutomationMatch(file: ConfigFile, content: string, index: number): boolean {
+  if (file.type === "settings-json") return false;
+
+  const line = getLineContentAtIndex(content, index).trimStart();
+  if (line.startsWith("#")) return true;
+  if (file.type === "hook-code") {
+    return /^(?:\/\/|\/\*|\*|\*\/)/.test(line);
+  }
+
+  return false;
+}
+
 /**
  * Checks whether the matched keyword at `matchIndex` sits inside a grep, test,
  * case, or similar pattern argument — meaning the hook is *testing for* the
@@ -580,7 +592,106 @@ const HOOK_CODE_REMOTE_SHELL_PAYLOAD_PATTERNS: ReadonlyArray<RegExp> = [
   /\bexecSync\s*\([\s\S]{0,320}(?:curl|wget)[\s\S]{0,200}\|\s*(?:bash|sh|zsh)\b/gi,
 ];
 
+const AI_TOOL_PERSISTENCE_IOCS: ReadonlyArray<{
+  readonly name: string;
+  readonly pattern: RegExp;
+  readonly description: string;
+}> = [
+  {
+    name: "tanstack-malicious-git-ref",
+    pattern:
+      /(?:@tanstack\/setup|github:tanstack\/router#79ac49eedf774dd4b0cfa308722bc463cfe5885c)/gi,
+    description:
+      "Matches the fictitious @tanstack/setup dependency or malicious git ref from the May 2026 TanStack/Mini Shai-Hulud campaign.",
+  },
+  {
+    name: "tanstack-payload-filename",
+    pattern: /\b(?:router_init\.js|tanstack_runner\.js)\b/gi,
+    description:
+      "Matches payload filenames used by the May 2026 TanStack/Mini Shai-Hulud npm campaign.",
+  },
+  {
+    name: "tanstack-exfil-network",
+    pattern:
+      /\b(?:api\.masscan\.cloud|filev2\.getsession\.org|git-tanstack\.com|seed[123]\.getsession\.org|83\.142\.209\.194|litter\.catbox\.moe\/(?:h8nc9u\.js|7rrc6l\.mjs))\b/gi,
+    description:
+      "Matches exfiltration or second-stage URLs reported for the May 2026 TanStack/Mini Shai-Hulud campaign.",
+  },
+  {
+    name: "ai-tool-persistence-payload",
+    pattern:
+      /(?:\.claude\/(?:router_runtime\.js|setup\.mjs)|\.vscode\/setup\.mjs|\.github\/workflows\/codeql_analysis\.ya?ml)/gi,
+    description:
+      "Matches AI developer-tool persistence payload paths used to re-execute through Claude Code or VS Code automation surfaces.",
+  },
+  {
+    name: "mini-shai-hulud-deadman-daemon",
+    pattern:
+      /\b(?:gh-token-monitor|com\.user\.gh-token-monitor\.plist|gh-token-monitor\.service|gh-token-monitor\.sh)\b/gi,
+    description:
+      "Matches dead-man switch persistence artifacts associated with the May 2026 Mini Shai-Hulud campaign.",
+  },
+  {
+    name: "mini-shai-hulud-campaign-marker",
+    pattern:
+      /(?:Shai-Hulud:\s*Here We Go Again|A Mini Shai-Hulud has Appeared|IfYouRevokeThisTokenItWillWipeTheComputerOfTheOwner|PUSH UR T3MPRR)/gi,
+    description:
+      "Matches repository descriptions or commit messages reported in Mini Shai-Hulud propagation and token-wiper flows.",
+  },
+  {
+    name: "mini-shai-hulud-python-payload",
+    pattern:
+      /(?:\/tmp\/transformers\.pyz|\btransformers\.pyz\b|\bpgmonitor\.py\b|\bpgsql-monitor\.service\b|\bMISTRAL_INIT\b)/gi,
+    description:
+      "Matches Python/PyPI Mini Shai-Hulud payload artifacts reported for compromised Mistral and Guardrails package versions.",
+  },
+];
+
 export const hookRules: ReadonlyArray<Rule> = [
+  {
+    id: "hooks-ai-tool-persistence-ioc",
+    name: "AI Tool Persistence IOC",
+    description:
+      "Checks hook and editor automation configs for known AI developer-tool supply-chain persistence indicators",
+    severity: "critical",
+    category: "hooks",
+    check(file: ConfigFile): ReadonlyArray<Finding> {
+      if (file.type !== "settings-json" && file.type !== "hook-script" && file.type !== "hook-code") {
+        return [];
+      }
+
+      const findings: Finding[] = [];
+      const searchTargets = [
+        { content: file.content, source: "content" },
+        { content: normalizeConfigPath(file.path), source: "path" },
+      ] as const;
+
+      for (const ioc of AI_TOOL_PERSISTENCE_IOCS) {
+        for (const target of searchTargets) {
+          for (const match of findAllMatches(target.content, ioc.pattern)) {
+            const index = match.index ?? 0;
+            if (target.source === "content" && isCommentOnlyAutomationMatch(file, target.content, index)) {
+              continue;
+            }
+
+            findings.push({
+              id: `hooks-ai-tool-persistence-ioc-${ioc.name}-${target.source}-${index}`,
+              severity: "critical",
+              category: "hooks",
+              title: "Known AI tool supply-chain persistence indicator",
+              description:
+                `${ioc.description} Treat this host or repository as potentially compromised until the hook/editor automation chain is removed and credentials are rotated.`,
+              file: file.path,
+              line: target.source === "content" ? findLineNumber(target.content, index) : undefined,
+              evidence: match[0],
+            });
+          }
+        }
+      }
+
+      return findings;
+    },
+  },
   {
     id: "hooks-hook-code-context-output",
     name: "Hook Code Context Output",
