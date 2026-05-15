@@ -127,6 +127,75 @@ describe("verifyPackages", () => {
     expect(pkg.risks.some((r) => r.type === "known-malicious")).toBe(true);
   });
 
+  it("detects compromised TanStack Mini Shai-Hulud package versions", async () => {
+    const packages = [
+      makePackage({
+        name: "@tanstack/react-router",
+        version: "1.169.8",
+        serverName: "router",
+      }),
+    ];
+    const report = await verifyPackages(packages);
+
+    expect(report.criticalCount).toBe(1);
+    expect(report.packages[0].risks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "known-malicious",
+          severity: "critical",
+        }),
+      ])
+    );
+  });
+
+  it("does not flag patched TanStack versions as compromised", async () => {
+    const packages = [
+      makePackage({
+        name: "@tanstack/react-router",
+        version: "1.169.9",
+        serverName: "router",
+      }),
+    ];
+    const report = await verifyPackages(packages);
+
+    expect(report.criticalCount).toBe(0);
+    expect(report.packages[0].risks.some((r) => r.type === "known-malicious")).toBe(false);
+  });
+
+  it("detects additional Mini Shai-Hulud npm and PyPI campaign package versions", async () => {
+    const packages = [
+      makePackage({
+        name: "@mistralai/mistralai",
+        version: "2.2.4",
+        serverName: "mistral",
+      }),
+      makePackage({
+        name: "@opensearch-project/opensearch",
+        version: "3.8.0",
+        serverName: "opensearch",
+      }),
+      makePackage({
+        name: "guardrails-ai",
+        version: "0.10.1",
+        serverName: "guardrails",
+      }),
+      makePackage({
+        name: "@uipath/agent-sdk",
+        version: "1.0.2",
+        serverName: "uipath",
+      }),
+      makePackage({
+        name: "@squawk/mcp",
+        version: "0.9.5",
+        serverName: "squawk",
+      }),
+    ];
+    const report = await verifyPackages(packages);
+
+    expect(report.criticalCount).toBe(5);
+    expect(report.packages.every((pkg) => pkg.risks.some((r) => r.type === "known-malicious"))).toBe(true);
+  });
+
   it("detects known vulnerable servers", async () => {
     const packages = [
       makePackage({
