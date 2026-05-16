@@ -10,7 +10,7 @@ import type {
 } from "../types.js";
 import { discoverConfigFiles } from "./discovery.js";
 import { getBuiltinRules } from "../rules/index.js";
-import { isExampleLikePath } from "../source-context.js";
+import { isExampleLikePath, isPluginCachePath } from "../source-context.js";
 import { analyzeSkillHealth } from "../skills/health.js";
 import { detectHarnessAdapters } from "../harness-adapters/index.js";
 
@@ -27,7 +27,7 @@ export interface ScanResult {
 export function scan(targetPath: string): ScanResult {
   const target = discoverConfigFiles(targetPath);
   const rules = getBuiltinRules();
-  const findings = runRules(target.files, rules);
+  const findings = runRules(target.files, rules, target.path);
   const skillHealth = analyzeSkillHealth(target.files);
   const harnessAdapters = detectHarnessAdapters(targetPath);
 
@@ -39,7 +39,8 @@ export function scan(targetPath: string): ScanResult {
  */
 function runRules(
   files: ReadonlyArray<ConfigFile>,
-  rules: ReadonlyArray<Rule>
+  rules: ReadonlyArray<Rule>,
+  scanRoot: string
 ): ReadonlyArray<Finding> {
   const findings: Finding[] = [];
 
@@ -52,7 +53,7 @@ function runRules(
 
   const filesByPath = new Map(files.map((file) => [file.path, file]));
   const annotatedFindings = findings.map((finding) => {
-    const annotatedFinding = annotateFindingRuntimeConfidence(finding, filesByPath);
+    const annotatedFinding = annotateFindingRuntimeConfidence(finding, filesByPath, scanRoot);
     return adjustFindingForSourceContext(annotatedFinding);
   });
 
@@ -63,10 +64,14 @@ function runRules(
   });
 }
 
-function classifyRuntimeConfidence(file: ConfigFile): RuntimeConfidence | undefined {
+function classifyRuntimeConfidence(file: ConfigFile, scanRoot: string): RuntimeConfidence | undefined {
   const normalizedPath = file.path.replace(/\\/g, "/").toLowerCase();
   if (normalizedPath === "settings.local.json" || normalizedPath.endsWith("/settings.local.json")) {
     return "project-local-optional";
+  }
+
+  if (isPluginCachePath(file.path, scanRoot)) {
+    return "plugin-cache";
   }
 
   if (file.type === "hook-code") {
@@ -89,14 +94,15 @@ function classifyRuntimeConfidence(file: ConfigFile): RuntimeConfidence | undefi
 
 function annotateFindingRuntimeConfidence(
   finding: Finding,
-  filesByPath: ReadonlyMap<string, ConfigFile>
+  filesByPath: ReadonlyMap<string, ConfigFile>,
+  scanRoot: string
 ): Finding {
   if (finding.runtimeConfidence) {
     return finding;
   }
 
   const file = filesByPath.get(finding.file);
-  const runtimeConfidence = file ? classifyRuntimeConfidence(file) : undefined;
+  const runtimeConfidence = file ? classifyRuntimeConfidence(file, scanRoot) : undefined;
   return runtimeConfidence ? { ...finding, runtimeConfidence } : finding;
 }
 
@@ -104,6 +110,8 @@ function adjustFindingForSourceContext(finding: Finding): Finding {
   switch (finding.runtimeConfidence) {
     case "docs-example":
       return adjustDocsExampleFinding(finding);
+    case "plugin-cache":
+      return adjustPluginCacheFinding(finding);
     case "plugin-manifest":
       return adjustPluginManifestFinding(finding);
     default:
@@ -129,6 +137,27 @@ function adjustDocsExampleFinding(finding: Finding): Finding {
       title: prefixTitle(finding.title, "Example config"),
     },
     "This finding comes from docs or sample configuration in the repository. It indicates risky guidance or example defaults, not confirmed active runtime exposure."
+  );
+}
+
+function adjustPluginCacheFinding(finding: Finding): Finding {
+  if (finding.category === "secrets") {
+    return withPrefixedDescription(
+      {
+        ...finding,
+        title: prefixTitle(finding.title, "Plugin cache"),
+      },
+      "This finding comes from an installed Claude plugin cache. It indicates packaged plugin content present on disk, not confirmed top-level runtime configuration."
+    );
+  }
+
+  return withPrefixedDescription(
+    {
+      ...finding,
+      severity: downgradeStructuralSeverity(finding.severity),
+      title: prefixTitle(finding.title, "Plugin cache"),
+    },
+    "This finding comes from an installed Claude plugin cache. It indicates packaged plugin content present on disk, not confirmed top-level runtime configuration."
   );
 }
 

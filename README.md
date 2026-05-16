@@ -102,7 +102,7 @@ agentshield scan --opus --stream
 agentshield init
 ```
 
-JSON reports now expose `findings[].runtimeConfidence` when AgentShield can distinguish active runtime config from project-local settings, template/example inventories, declarative plugin manifests, and manifest-resolved non-shell hook implementations. Reports also include local harness adapter evidence for Claude Code, OpenCode, Codex, Gemini, dmux, terminal-agent wrappers, and project-local templates when matching markers are present.
+JSON reports now expose `findings[].runtimeConfidence` when AgentShield can distinguish active runtime config from project-local settings, template/example inventories, installed Claude plugin caches, declarative plugin manifests, and manifest-resolved non-shell hook implementations. Reports also include local harness adapter evidence for Claude Code, OpenCode, Codex, Gemini, dmux, terminal-agent wrappers, and project-local templates when matching markers are present.
 
 ## What It Catches
 
@@ -173,7 +173,7 @@ AgentShield scans both active MCP config and repository-shipped MCP templates.
 - Findings from `mcp.json`, `.claude/mcp.json`, `.claude.json`, and active `settings.json` should be treated as the highest-confidence runtime exposure.
 - Findings from `settings.local.json` are emitted as `runtimeConfidence: project-local-optional`.
 - Findings from locations such as `mcp-configs/`, `config/mcp/`, or `configs/mcp/` indicate risky MCP definitions present in repository templates, not guaranteed active runtime enablement.
-- JSON, markdown, terminal, and HTML outputs now expose source context via `runtimeConfidence: active-runtime | project-local-optional | template-example | docs-example | plugin-manifest | hook-code`.
+- JSON, markdown, terminal, and HTML outputs now expose source context via `runtimeConfidence: active-runtime | project-local-optional | template-example | docs-example | plugin-cache | plugin-manifest | hook-code`.
 - Non-secret `template-example` MCP findings are score-weighted at `0.25x`, and one template file is capped at `10` deduction points per score category so a single MCP catalog cannot score like dozens of enabled servers.
 - In template files, findings such as risky server type, remote URL transport, `npx -y`, unpinned packages, and environment inheritance are still valuable, but they should be interpreted as "this repo ships a risky MCP template" rather than "this MCP is definitely enabled right now."
 - Aggregate findings like large MCP server counts are especially likely to overstate runtime exposure when the source file is a template catalog.
@@ -202,9 +202,10 @@ Structured JSON under `.claude/subagents/` and `.claude/slash-commands/` is anal
 - Cross-file hook-manifest awareness now suppresses settings-only `hooks-no-pretooluse` when a companion `hooks/hooks.json` manifest defines PreToolUse hooks.
 - Manifest-referenced hook implementations are now discovered from `hooks/hooks.json`-style indirection; shell targets continue through hook rules, and non-shell `hook-code` targets now emit targeted findings for explicit `output(...)` context injection, transcript input access, and remote shell payloads executed via child-process wrappers.
 - Current known high-signal caveats are broader non-shell hook execution that still needs language-aware analysis beyond those current `hook-code` signals, and `skill-md` prompt text that still bypasses most agent/injection rules.
-- `runtimeConfidence` now appears on MCP findings, `settings.local.json`, docs/examples, plugin manifests, and manifest-resolved non-shell hook code. Scoring discounts non-secret `template-example` and `docs-example` findings at `0.25x`, non-secret `project-local-optional` findings at `0.75x`, and non-secret `plugin-manifest` findings at `0.5x`. Non-secret `template-example` findings are also capped at `10` deduction points per file and score category so one catalog file cannot dominate the grade. `hook-code` findings currently stay at full weight, but the active rules there are narrow language-aware implementation signals.
+- `runtimeConfidence` now appears on MCP findings, `settings.local.json`, docs/examples, installed Claude plugin caches, plugin manifests, and manifest-resolved non-shell hook code. Scoring discounts non-secret `template-example` and `docs-example` findings at `0.25x`, non-secret `project-local-optional` findings at `0.75x`, and non-secret `plugin-cache` / `plugin-manifest` findings at `0.5x`. Non-secret `template-example` findings are also capped at `10` deduction points per file and score category so one catalog file cannot dominate the grade. `hook-code` findings currently stay at full weight, but the active rules there are narrow language-aware implementation signals.
 - Practical reading rule: `template-example` means "repo ships this risky template", not "this is definitely enabled right now."
 - Practical reading rule: `docs-example` means "repo ships risky sample guidance", not "this example is active runtime config."
+- Practical reading rule: `plugin-cache` means "installed plugin content is present on disk", not "this file is top-level runtime config"; real secrets still stay critical.
 - Practical reading rule: `plugin-manifest` means "the repo declares this hook behavior", while `hook-code` means "the scanner reached the referenced non-shell implementation."
 - Current edge case: docs-only example trees now re-add the standalone `CLAUDE.md` example file for scanning, but still suppress the rest of the nested example subtree unless a runtime companion exists.
 - Current edge case: tutorial/example bundles outside the current `docs/`, `commands/`, `examples/`, `samples/`, `demo/`, `tutorial/`, `guide/`, `cookbook/`, and `playground/` heuristics can still be treated as live config until broader example-root classification lands.
@@ -260,13 +261,13 @@ jq '.findings
 
 # Lower-confidence inventory that usually needs interpretation, not suppression
 jq '.findings
-  | map(select((.runtimeConfidence // "") | IN("template-example","docs-example","plugin-manifest")))
+  | map(select((.runtimeConfidence // "") | IN("template-example","docs-example","plugin-cache","plugin-manifest")))
   | map({file, severity, runtimeConfidence, title})' report.json
 ```
 
 Recommended audit order:
 - `active-runtime` and `project-local-optional`: treat as highest-signal findings first.
-- `template-example` and `docs-example`: confirm whether the repo is shipping risky guidance versus actually enabling it.
+- `template-example`, `docs-example`, and `plugin-cache`: confirm whether the repo or installed plugin cache is shipping risky guidance versus actually enabling it.
 - `plugin-manifest`: confirm whether the risk is in declarative hook wiring or the referenced implementation.
 - `hook-code`: confirm whether the implementation actually injects context, reads transcripts, or shells out in a risky way.
 
@@ -308,9 +309,9 @@ When to open a false-positive issue instead of just triaging the report:
 - the finding would still be misleading even after reading `runtimeConfidence`
 
 Recommended operating model:
-- Start with `runtimeConfidence` before changing any rule. Separate `active-runtime` from `template-example`, `docs-example`, `plugin-manifest`, and `project-local-optional`.
+- Start with `runtimeConfidence` before changing any rule. Separate `active-runtime` from `template-example`, `docs-example`, `plugin-cache`, `plugin-manifest`, and `project-local-optional`.
 - Reclassify before suppressing. If the finding is real but lower confidence, keep it visible and adjust wording or score weight instead of hiding it.
-- Keep secrets on a stricter standard. Real credentials should stay critical even in docs, examples, or manifests.
+- Keep secrets on a stricter standard. Real credentials should stay critical even in docs, examples, plugin caches, or manifests.
 - Use cross-file context whenever possible. Settings, manifests, and referenced hook implementations usually need to be read together.
 - For `hook-code`, add only narrow language-aware rules for explicit risky behavior. Avoid broad wrapper heuristics.
 - For agent rules, anchor on role metadata and lead instructions before matching arbitrary later prose.
@@ -324,7 +325,7 @@ Repo conventions that help AgentShield scan accurately:
 
 Current high-value places to audit first:
 - files with the highest finding count
-- files with `runtimeConfidence: template-example`
+- files with `runtimeConfidence: template-example` or `plugin-cache`
 - `settings.local.json` findings that may be project-local rather than repo-wide
 - `plugin-manifest` findings that need confirmation in the referenced implementation
 - `hook-code` findings that involve context injection, transcript access, or child-process execution
@@ -466,16 +467,17 @@ agentshield evidence-pack verify ./agentshield-evidence --json
 ```
 
 Notes:
-- `runtimeConfidence` is emitted for active runtime config, `settings.local.json`, docs/examples, plugin manifests, and manifest-resolved non-shell hook code.
+- `runtimeConfidence` is emitted for active runtime config, `settings.local.json`, docs/examples, installed Claude plugin caches, plugin manifests, and manifest-resolved non-shell hook code.
 - `harnessAdapters` is local marker evidence only. It does not call external services or imply a hosted/team entitlement.
 - Adapter `confidence` is `strong` when a primary harness marker exists, and `partial` when only supporting directories or secondary markers are present.
 - `active-runtime` means active config such as `mcp.json`, `.claude/mcp.json`, `.claude.json`, or active `settings.json`.
 - `project-local-optional` means project-local settings such as `settings.local.json`.
 - `template-example` means template/catalog files such as `mcp-configs/` or `config/mcp/`.
 - `docs-example` means docs/tutorial/example content such as `docs/guide/settings.json` or `commands/*.md`.
+- `plugin-cache` means installed Claude plugin cache content such as `.claude/plugins/cache/...`.
 - `plugin-manifest` means declarative hook manifests such as `hooks/hooks.json`.
 - `hook-code` means a manifest-resolved non-shell implementation such as `scripts/hooks/session-start.js`.
-- Score weighting discounts non-secret `template-example` and `docs-example` findings to `0.25x`, non-secret `project-local-optional` findings to `0.75x`, and non-secret `plugin-manifest` findings to `0.5x`; committed secrets still count at full weight. Non-secret `template-example` findings are also capped at `10` deduction points per file and score category. See [`false-positive-audit.md`](./false-positive-audit.md).
+- Score weighting discounts non-secret `template-example` and `docs-example` findings to `0.25x`, non-secret `project-local-optional` findings to `0.75x`, and non-secret `plugin-cache` / `plugin-manifest` findings to `0.5x`; committed secrets still count at full weight. Non-secret `template-example` findings are also capped at `10` deduction points per file and score category. See [`false-positive-audit.md`](./false-positive-audit.md).
 
 ## API Reference
 
