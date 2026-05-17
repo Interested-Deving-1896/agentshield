@@ -63,6 +63,26 @@ inputs:
     description: "Verify evidence-pack artifact hashes and bundle digest after writing"
     required: false
     default: "true"
+  policy-promotion-manifest:
+    description: "Path to an AgentShield policy export manifest to verify and promote or dry-run"
+    required: false
+    default: ""
+  policy-promotion-pack:
+    description: "Policy pack id to select when the promotion manifest contains multiple packs"
+    required: false
+    default: ""
+  policy-promotion-output:
+    description: "Path to write the promoted active policy when policy-promotion-dry-run is false"
+    required: false
+    default: ".agentshield/policy.json"
+  policy-promotion-dry-run:
+    description: "Verify promotion review evidence without writing the active policy"
+    required: false
+    default: "true"
+  fail-on-policy-promotion:
+    description: "Fail the action when policy promotion review items still require action"
+    required: false
+    default: "false"
 
 outputs:
   score:
@@ -119,6 +139,16 @@ outputs:
     description: "Evidence-pack verification status: not-run, passed, failed, or error"
   evidence-pack-digest:
     description: "Verified evidence-pack bundle digest"
+  policy-promotion-status:
+    description: "Policy promotion status: not-run, verified, needs-review, or error"
+  policy-promotion-pack:
+    description: "Policy pack selected during promotion"
+  policy-promotion-review-items:
+    description: "Number of policy promotion review items"
+  policy-promotion-action-required-count:
+    description: "Number of policy promotion review items that still require action"
+  policy-promotion-digest:
+    description: "Verified digest for the promoted policy pack"
 
 runs:
   using: "node20"

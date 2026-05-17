@@ -33,9 +33,14 @@ import {
   renderPackageManagerHardeningJobSummary,
   summarizePackageManagerHardening,
 } from "./action-hardening.js";
+import {
+  renderPolicyPromotionJobSummary,
+  summarizePolicyPromotion,
+} from "./action-promotion.js";
 import type { PolicyEvaluation } from "./policy/index.js";
 import type { BaselineComparison } from "./baseline/index.js";
 import type { SupplyChainReport } from "./supply-chain/index.js";
+import type { PolicyPackPromotionResult } from "./policy/index.js";
 import type { Finding, Severity } from "./types.js";
 
 // ─── GitHub Actions Helpers ──────────────────────────────────
@@ -135,8 +140,13 @@ async function run(): Promise<void> {
   const baselinePath = getInput("baseline", "");
   const saveBaselinePath = getInput("save-baseline", "");
   const sarifOutput = getInput("sarif-output", "agentshield-results.sarif");
-  const policyPath = getInput("policy", "");
+  let policyPath = getInput("policy", "");
   const failOnPolicy = getInput("fail-on-policy", "true") === "true";
+  const policyPromotionManifest = getInput("policy-promotion-manifest", "");
+  const policyPromotionPack = getInput("policy-promotion-pack", "");
+  const policyPromotionOutput = getInput("policy-promotion-output", ".agentshield/policy.json");
+  const policyPromotionDryRun = getInput("policy-promotion-dry-run", "true") === "true";
+  const failOnPolicyPromotion = getInput("fail-on-policy-promotion", "false") === "true";
   const supplyChainRequested = getInput("supply-chain", "true") === "true";
   const supplyChainOnline = getInput("supply-chain-online", "false") === "true";
   const failOnSupplyChainInput = getInput("fail-on-supply-chain", "");
@@ -194,6 +204,11 @@ async function run(): Promise<void> {
   setOutput("score-delta", "0");
   setOutput("policy-status", "not-run");
   setOutput("policy-violations", "0");
+  setOutput("policy-promotion-status", "not-run");
+  setOutput("policy-promotion-pack", "");
+  setOutput("policy-promotion-review-items", "0");
+  setOutput("policy-promotion-action-required-count", "0");
+  setOutput("policy-promotion-digest", "");
   setOutput("supply-chain-status", "not-run");
   setOutput("supply-chain-risky-packages", "0");
   setOutput("supply-chain-critical-count", "0");
@@ -227,17 +242,45 @@ async function run(): Promise<void> {
   setOutput("evidence-pack-digest", "");
 
   let policyEvaluation: PolicyEvaluation | null = null;
+  let policyPromotionResult: PolicyPackPromotionResult | null = null;
+  let resolvedPolicyPath = "";
   let shouldFailOnPolicy = false;
+  let shouldFailOnPolicyPromotion = false;
   let baselineComparison: BaselineComparison | null = null;
   let shouldFailOnBaseline = false;
   let supplyChainReport: SupplyChainReport = emptySupplyChainReport();
   let shouldFailOnSupplyChain = false;
 
+  if (policyPromotionManifest) {
+    try {
+      const { PolicyPackSchema, promotePolicyPack } = await import("./policy/index.js");
+      const parsedPack = policyPromotionPack
+        ? PolicyPackSchema.parse(policyPromotionPack)
+        : undefined;
+      policyPromotionResult = promotePolicyPack({
+        manifestPath: resolve(workspace, policyPromotionManifest),
+        outputPath: resolve(workspace, policyPromotionOutput),
+        pack: parsedPack,
+        dryRun: policyPromotionDryRun,
+      });
+
+      if (!policyPath && !policyPromotionResult.dryRun) {
+        policyPath = policyPromotionResult.outputPath;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setOutput("policy-promotion-status", "error");
+      console.log(`::error::AgentShield policy promotion failed: ${escapeAnnotation(message)}`);
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   if (policyPath) {
     const { loadPolicy, evaluatePolicy, renderPolicyEvaluation } = await import(
       "./policy/index.js"
     );
-    const resolvedPolicyPath = resolve(workspace, policyPath);
+    resolvedPolicyPath = resolve(workspace, policyPath);
     const policyResult = loadPolicy(resolvedPolicyPath);
 
     if (!policyResult.success) {
@@ -281,6 +324,50 @@ async function run(): Promise<void> {
           shouldFailOnPolicy = true;
         }
       }
+    }
+  }
+
+  if (policyPromotionResult) {
+    const promotionPolicyPaths = new Set([
+      resolve(workspace, policyPromotionResult.sourceFile),
+      resolve(workspace, policyPromotionResult.outputPath),
+    ]);
+    const policyStatus = policyEvaluation
+      ? statusForPolicyEvaluation(policyEvaluation)
+      : "not-run";
+    const promotionSummary = summarizePolicyPromotion(
+      policyPromotionResult,
+      policyEvaluation && promotionPolicyPaths.has(resolvedPolicyPath)
+        ? {
+            runtimeSmoke: {
+              policyPath: resolvedPolicyPath,
+              targetPath: inputPath,
+              policyStatus,
+            },
+          }
+        : {}
+    );
+
+    setOutput("policy-promotion-status", promotionSummary.status);
+    setOutput("policy-promotion-pack", promotionSummary.pack);
+    setOutput("policy-promotion-review-items", String(promotionSummary.totalReviewItems));
+    setOutput(
+      "policy-promotion-action-required-count",
+      String(promotionSummary.actionRequiredCount)
+    );
+    setOutput("policy-promotion-digest", promotionSummary.digest);
+    writeJobSummary(renderPolicyPromotionJobSummary(promotionSummary));
+    console.log(
+      `Policy promotion: ${promotionSummary.status.toUpperCase()} ` +
+      `(${promotionSummary.actionRequiredCount}/${promotionSummary.totalReviewItems} action required)`
+    );
+
+    if (failOnPolicyPromotion && promotionSummary.actionRequiredCount > 0) {
+      console.log(
+        `::error::AgentShield policy promotion gate FAILED: ` +
+        `${promotionSummary.actionRequiredCount} review item(s) still require action`
+      );
+      shouldFailOnPolicyPromotion = true;
     }
   }
 
@@ -444,6 +531,11 @@ async function run(): Promise<void> {
   }
 
   if (shouldFailOnPolicy) {
+    process.exitCode = 1;
+    return;
+  }
+
+  if (shouldFailOnPolicyPromotion) {
     process.exitCode = 1;
     return;
   }

@@ -13183,6 +13183,71 @@ function renderPackageManagerHardeningJobSummary(summary) {
   return lines.join("\n");
 }
 
+// src/action-promotion.ts
+function summarizePolicyPromotion(result, options = {}) {
+  const reviewItems = options.runtimeSmoke ? markRuntimeSmokeVerified(result.reviewItems, options.runtimeSmoke) : result.reviewItems;
+  const actionRequiredCount = reviewItems.filter(
+    (item) => item.status === "action_required"
+  ).length;
+  return {
+    status: actionRequiredCount > 0 ? "needs-review" : "verified",
+    pack: result.pack,
+    policyName: result.policyName,
+    digest: result.sha256,
+    promoted: result.promoted,
+    dryRun: result.dryRun,
+    outputPath: result.outputPath,
+    sourceFile: result.sourceFile,
+    totalReviewItems: reviewItems.length,
+    actionRequiredCount,
+    reviewItems
+  };
+}
+function renderPolicyPromotionJobSummary(summary) {
+  const lines = [
+    "",
+    "",
+    "## AgentShield Policy Promotion",
+    "",
+    `- Status: ${summary.status}`,
+    `- Pack: ${summary.pack}`,
+    `- Policy: ${summary.policyName}`,
+    `- Digest: ${summary.digest}`,
+    `- Promoted: ${summary.promoted ? "yes" : "no"}`,
+    `- Dry run: ${summary.dryRun ? "yes" : "no"}`,
+    `- Source: ${summary.sourceFile}`,
+    `- Output: ${summary.outputPath}`,
+    `- Review items: ${summary.totalReviewItems}`,
+    `- Action required: ${summary.actionRequiredCount}`
+  ];
+  if (summary.reviewItems.length > 0) {
+    lines.push("", "### Promotion Review Items", "");
+    for (const item of summary.reviewItems) {
+      const evidence = item.evidencePaths.length > 0 ? ` evidence=${item.evidencePaths.join(", ")}` : "";
+      lines.push(
+        `- ${item.id} (${item.status}, ${item.severity}): ${item.title}${evidence}`
+      );
+      lines.push(`  - ${item.detail}`);
+      lines.push(`  - recommendation: ${item.recommendation}`);
+    }
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+function markRuntimeSmokeVerified(reviewItems, runtimeSmoke) {
+  return reviewItems.map((item) => {
+    if (item.id !== "runtime-smoke-test") return item;
+    return {
+      ...item,
+      status: "verified",
+      severity: "info",
+      detail: `Runtime smoke scan completed against ${runtimeSmoke.targetPath} with ${runtimeSmoke.policyPath}; policy status ${runtimeSmoke.policyStatus}.`,
+      evidencePaths: [runtimeSmoke.policyPath],
+      recommendation: "Attach this Action job summary to the policy promotion evidence."
+    };
+  });
+}
+
 // src/action.ts
 function getInput(name, fallback) {
   const envKey = `INPUT_${name.replace(/ /g, "_").toUpperCase()}`;
@@ -13257,8 +13322,13 @@ async function run() {
   const baselinePath = getInput("baseline", "");
   const saveBaselinePath = getInput("save-baseline", "");
   const sarifOutput = getInput("sarif-output", "agentshield-results.sarif");
-  const policyPath = getInput("policy", "");
+  let policyPath = getInput("policy", "");
   const failOnPolicy = getInput("fail-on-policy", "true") === "true";
+  const policyPromotionManifest = getInput("policy-promotion-manifest", "");
+  const policyPromotionPack = getInput("policy-promotion-pack", "");
+  const policyPromotionOutput = getInput("policy-promotion-output", ".agentshield/policy.json");
+  const policyPromotionDryRun = getInput("policy-promotion-dry-run", "true") === "true";
+  const failOnPolicyPromotion = getInput("fail-on-policy-promotion", "false") === "true";
   const supplyChainRequested = getInput("supply-chain", "true") === "true";
   const supplyChainOnline = getInput("supply-chain-online", "false") === "true";
   const failOnSupplyChainInput = getInput("fail-on-supply-chain", "");
@@ -13300,6 +13370,11 @@ async function run() {
   setOutput("score-delta", "0");
   setOutput("policy-status", "not-run");
   setOutput("policy-violations", "0");
+  setOutput("policy-promotion-status", "not-run");
+  setOutput("policy-promotion-pack", "");
+  setOutput("policy-promotion-review-items", "0");
+  setOutput("policy-promotion-action-required-count", "0");
+  setOutput("policy-promotion-digest", "");
   setOutput("supply-chain-status", "not-run");
   setOutput("supply-chain-risky-packages", "0");
   setOutput("supply-chain-critical-count", "0");
@@ -13332,14 +13407,38 @@ async function run() {
   setOutput("evidence-pack-status", "not-run");
   setOutput("evidence-pack-digest", "");
   let policyEvaluation = null;
+  let policyPromotionResult = null;
+  let resolvedPolicyPath = "";
   let shouldFailOnPolicy = false;
+  let shouldFailOnPolicyPromotion = false;
   let baselineComparison = null;
   let shouldFailOnBaseline = false;
   let supplyChainReport = emptySupplyChainReport();
   let shouldFailOnSupplyChain = false;
+  if (policyPromotionManifest) {
+    try {
+      const { PolicyPackSchema: PolicyPackSchema2, promotePolicyPack: promotePolicyPack2 } = await Promise.resolve().then(() => (init_policy(), policy_exports));
+      const parsedPack = policyPromotionPack ? PolicyPackSchema2.parse(policyPromotionPack) : void 0;
+      policyPromotionResult = promotePolicyPack2({
+        manifestPath: resolve4(workspace, policyPromotionManifest),
+        outputPath: resolve4(workspace, policyPromotionOutput),
+        pack: parsedPack,
+        dryRun: policyPromotionDryRun
+      });
+      if (!policyPath && !policyPromotionResult.dryRun) {
+        policyPath = policyPromotionResult.outputPath;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setOutput("policy-promotion-status", "error");
+      console.log(`::error::AgentShield policy promotion failed: ${escapeAnnotation(message)}`);
+      process.exitCode = 1;
+      return;
+    }
+  }
   if (policyPath) {
     const { loadPolicy: loadPolicy2, evaluatePolicy: evaluatePolicy2, renderPolicyEvaluation: renderPolicyEvaluation2 } = await Promise.resolve().then(() => (init_policy(), policy_exports));
-    const resolvedPolicyPath = resolve4(workspace, policyPath);
+    resolvedPolicyPath = resolve4(workspace, policyPath);
     const policyResult = loadPolicy2(resolvedPolicyPath);
     if (!policyResult.success) {
       setOutput("policy-status", "error");
@@ -13381,6 +13480,41 @@ async function run() {
           shouldFailOnPolicy = true;
         }
       }
+    }
+  }
+  if (policyPromotionResult) {
+    const promotionPolicyPaths = /* @__PURE__ */ new Set([
+      resolve4(workspace, policyPromotionResult.sourceFile),
+      resolve4(workspace, policyPromotionResult.outputPath)
+    ]);
+    const policyStatus = policyEvaluation ? statusForPolicyEvaluation(policyEvaluation) : "not-run";
+    const promotionSummary = summarizePolicyPromotion(
+      policyPromotionResult,
+      policyEvaluation && promotionPolicyPaths.has(resolvedPolicyPath) ? {
+        runtimeSmoke: {
+          policyPath: resolvedPolicyPath,
+          targetPath: inputPath,
+          policyStatus
+        }
+      } : {}
+    );
+    setOutput("policy-promotion-status", promotionSummary.status);
+    setOutput("policy-promotion-pack", promotionSummary.pack);
+    setOutput("policy-promotion-review-items", String(promotionSummary.totalReviewItems));
+    setOutput(
+      "policy-promotion-action-required-count",
+      String(promotionSummary.actionRequiredCount)
+    );
+    setOutput("policy-promotion-digest", promotionSummary.digest);
+    writeJobSummary(renderPolicyPromotionJobSummary(promotionSummary));
+    console.log(
+      `Policy promotion: ${promotionSummary.status.toUpperCase()} (${promotionSummary.actionRequiredCount}/${promotionSummary.totalReviewItems} action required)`
+    );
+    if (failOnPolicyPromotion && promotionSummary.actionRequiredCount > 0) {
+      console.log(
+        `::error::AgentShield policy promotion gate FAILED: ${promotionSummary.actionRequiredCount} review item(s) still require action`
+      );
+      shouldFailOnPolicyPromotion = true;
     }
   }
   if (format === "sarif") {
@@ -13517,6 +13651,10 @@ async function run() {
     }
   }
   if (shouldFailOnPolicy) {
+    process.exitCode = 1;
+    return;
+  }
+  if (shouldFailOnPolicyPromotion) {
     process.exitCode = 1;
     return;
   }

@@ -93,6 +93,20 @@ describe("action helpers (logic verification)", () => {
     expect(actionYaml).toContain("package-manager-hardening-release-age-gates:");
   });
 
+  it("documents policy promotion inputs and outputs in action.yml", () => {
+    const actionYaml = readFileSync(resolve(process.cwd(), "action.yml"), "utf-8");
+
+    expect(actionYaml).toContain("policy-promotion-manifest:");
+    expect(actionYaml).toContain("policy-promotion-pack:");
+    expect(actionYaml).toContain("policy-promotion-output:");
+    expect(actionYaml).toContain("policy-promotion-dry-run:");
+    expect(actionYaml).toContain("fail-on-policy-promotion:");
+    expect(actionYaml).toContain("policy-promotion-status:");
+    expect(actionYaml).toContain("policy-promotion-review-items:");
+    expect(actionYaml).toContain("policy-promotion-action-required-count:");
+    expect(actionYaml).toContain("policy-promotion-digest:");
+  });
+
   it("writes and verifies an evidence pack when requested", () => {
     const workspace = mkdtempSync(join(tmpdir(), "agentshield-action-workspace-"));
     const outputFile = join(workspace, "github-output.txt");
@@ -170,6 +184,78 @@ describe("action helpers (logic verification)", () => {
     expect(summary).toContain("- Status: needs-review");
     expect(summary).toContain("package-manager-lifecycle-scripts-enabled");
     expect(summary).toContain("package-manager-npm-release-age-gate-unsupported");
+  });
+
+  it("emits policy promotion review-item outputs and runtime smoke summary", () => {
+    const workspace = mkdtempSync(join(tmpdir(), "agentshield-action-promotion-"));
+    const outputFile = join(workspace, "github-output.txt");
+    const summaryFile = join(workspace, "github-summary.md");
+    const policiesDir = join(workspace, ".github", "agentshield-policies");
+
+    mkdirSync(join(workspace, ".claude"), { recursive: true });
+    writeFileSync(join(workspace, ".claude", "settings.json"), JSON.stringify({
+      permissions: {
+        deny: ["Bash(rm -rf *)"],
+      },
+    }, null, 2));
+
+    const exportResult = spawnSync(process.execPath, [
+      resolve(process.cwd(), "dist/index.js"),
+      "policy",
+      "export",
+      "--output-dir",
+      policiesDir,
+      "--pack",
+      "ci-enforcement",
+      "--owner",
+      "security@example.com",
+    ], {
+      cwd: workspace,
+      env: {
+        ...process.env,
+        NODE_NO_WARNINGS: "1",
+      },
+      encoding: "utf-8",
+    });
+    expect(exportResult.status).toBe(0);
+    expect(exportResult.stderr).toBe("");
+
+    const activePolicy = join(workspace, ".agentshield", "policy.json");
+    const result = spawnSync(process.execPath, [ACTION_PATH], {
+      cwd: workspace,
+      env: {
+        ...process.env,
+        GITHUB_WORKSPACE: workspace,
+        GITHUB_OUTPUT: outputFile,
+        GITHUB_STEP_SUMMARY: summaryFile,
+        INPUT_PATH: ".",
+        "INPUT_FAIL-ON-FINDINGS": "false",
+        "INPUT_POLICY-PROMOTION-MANIFEST": join(policiesDir, "manifest.json"),
+        "INPUT_POLICY-PROMOTION-PACK": "ci-enforcement",
+        "INPUT_POLICY-PROMOTION-OUTPUT": activePolicy,
+        "INPUT_POLICY-PROMOTION-DRY-RUN": "false",
+        INPUT_POLICY: activePolicy,
+        "INPUT_FAIL-ON-POLICY": "false",
+      },
+      encoding: "utf-8",
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+
+    const outputs = readFileSync(outputFile, "utf-8");
+    expect(outputs).toContain("policy-promotion-status=verified");
+    expect(outputs).toContain("policy-promotion-review-items=4");
+    expect(outputs).toContain("policy-promotion-action-required-count=0");
+    expect(outputs).toMatch(/policy-promotion-digest=sha256:[a-f0-9]{64}/);
+    expect(outputs).toContain("policy-status=");
+
+    const summary = readFileSync(summaryFile, "utf-8");
+    expect(summary).toContain("## AgentShield Policy Promotion");
+    expect(summary).toContain("- Status: verified");
+    expect(summary).toContain("runtime-smoke-test");
+    expect(summary).toContain("Runtime smoke scan completed against");
+    expect(summary).toContain(activePolicy);
   });
 
   it("fails by default when MCP supply-chain verification finds a compromised package", () => {

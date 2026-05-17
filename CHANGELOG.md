@@ -10,6 +10,9 @@ All notable changes to this project will be documented in this file.
 - Added GitHub Action package-manager hardening outputs and job-summary
   evidence for registry credentials, lifecycle-script drift, and release-age
   gate drift.
+- Added GitHub Action policy-promotion review outputs and job-summary evidence
+  so CI can route owner approval, protected rollout, and runtime-smoke
+  `reviewItems` from checksum-verified policy exports.
 
 ## [1.4.0] - 2026-03-20
 
