@@ -148,6 +148,26 @@ describe("verifyPackages", () => {
     );
   });
 
+  it("detects compromised packages extracted from lockfiles", async () => {
+    const report = await verifyPackages([
+      makePackage({
+        name: "@tanstack/react-router",
+        version: "1.169.8",
+        source: "lockfile",
+        serverName: "package-lock.json",
+      }),
+    ]);
+
+    expect(report.criticalCount).toBe(1);
+    expect(report.packages[0].provenance.locator).toBe("@tanstack/react-router@1.169.8");
+    expect(report.packages[0].risks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "known-malicious",
+        severity: "critical",
+      }),
+    ]));
+  });
+
   it("does not flag patched TanStack versions as compromised", async () => {
     const packages = [
       makePackage({

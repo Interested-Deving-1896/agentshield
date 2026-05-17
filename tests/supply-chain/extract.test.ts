@@ -227,7 +227,71 @@ describe("extractPackages", () => {
     expect(packages).toEqual([]);
   });
 
-  it("skips non-MCP config files", () => {
+  it("extracts package manifest dependencies for supply-chain verification", () => {
+    const file: ConfigFile = {
+      path: "package.json",
+      type: "package-manager-config",
+      content: JSON.stringify({
+        dependencies: {
+          "@tanstack/react-router": "^1.169.8",
+        },
+        devDependencies: {
+          "vitest": "^3.0.5",
+        },
+      }),
+    };
+
+    const packages = extractPackages([file]);
+
+    expect(packages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: "@tanstack/react-router",
+        version: "1.169.8",
+        source: "manifest",
+        serverName: "package.json",
+      }),
+      expect.objectContaining({
+        name: "vitest",
+        source: "manifest",
+      }),
+    ]));
+  });
+
+  it("extracts exact package-lock versions for compromised package matching", () => {
+    const file: ConfigFile = {
+      path: "package-lock.json",
+      type: "package-manager-config",
+      content: JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "": {
+            dependencies: {
+              "@tanstack/react-router": "^1.169.8",
+            },
+          },
+          "node_modules/@tanstack/react-router": {
+            version: "1.169.8",
+          },
+          "node_modules/@modelcontextprotocol/sdk": {
+            version: "1.0.0",
+          },
+        },
+      }),
+    };
+
+    const packages = extractPackages([file]);
+
+    expect(packages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: "@tanstack/react-router",
+        version: "1.169.8",
+        source: "lockfile",
+        serverName: "package-lock.json",
+      }),
+    ]));
+  });
+
+  it("skips non-package config files", () => {
     const file: ConfigFile = {
       path: "CLAUDE.md",
       type: "claude-md",

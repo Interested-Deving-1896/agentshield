@@ -19,9 +19,7 @@ export function extractPackages(
   const seen = new Set<string>();
 
   for (const file of files) {
-    if (file.type !== "mcp-json" && file.type !== "settings-json") continue;
-
-    const extracted = extractFromMcpConfig(file.content);
+    const extracted = extractFromConfigFile(file);
     for (const pkg of extracted) {
       const key = buildPackageDedupeKey(pkg);
       if (!seen.has(key)) {
@@ -32,6 +30,26 @@ export function extractPackages(
   }
 
   return packages;
+}
+
+function extractFromConfigFile(file: ConfigFile): ReadonlyArray<ExtractedPackage> {
+  if (file.type === "mcp-json" || file.type === "settings-json") {
+    return extractFromMcpConfig(file.content);
+  }
+
+  if (file.type !== "package-manager-config") {
+    return [];
+  }
+
+  const normalizedPath = file.path.replace(/\\/g, "/").toLowerCase();
+  if (normalizedPath.endsWith("package.json")) {
+    return extractFromPackageJson(file.content, file.path);
+  }
+  if (normalizedPath.endsWith("package-lock.json")) {
+    return extractFromPackageLock(file.content, file.path);
+  }
+
+  return [];
 }
 
 function extractFromMcpConfig(content: string): ReadonlyArray<ExtractedPackage> {
@@ -54,6 +72,84 @@ function extractFromMcpConfig(content: string): ReadonlyArray<ExtractedPackage> 
         server.args ?? []
       );
       packages.push(...extracted);
+    }
+
+    return packages;
+  } catch {
+    return [];
+  }
+}
+
+function extractFromPackageJson(
+  content: string,
+  path: string
+): ReadonlyArray<ExtractedPackage> {
+  try {
+    const manifest = JSON.parse(content) as unknown;
+    if (!isRecord(manifest)) return [];
+
+    const packages: ExtractedPackage[] = [];
+    for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) {
+      const dependencies = manifest[field];
+      if (!isRecord(dependencies)) continue;
+
+      for (const [name, spec] of Object.entries(dependencies)) {
+        if (!looksLikePackageDependency(name) || typeof spec !== "string") continue;
+        packages.push({
+          name,
+          version: normalizeManifestVersion(spec),
+          source: "manifest",
+          serverName: path,
+        });
+      }
+    }
+
+    return packages;
+  } catch {
+    return [];
+  }
+}
+
+function extractFromPackageLock(
+  content: string,
+  path: string
+): ReadonlyArray<ExtractedPackage> {
+  try {
+    const lockfile = JSON.parse(content) as unknown;
+    if (!isRecord(lockfile)) return [];
+
+    const packages: ExtractedPackage[] = [];
+    if (isRecord(lockfile.packages)) {
+      for (const [location, entry] of Object.entries(lockfile.packages)) {
+        if (!location.startsWith("node_modules/") || !isRecord(entry)) continue;
+
+        const name = location.slice("node_modules/".length);
+        if (!looksLikePackageDependency(name)) continue;
+
+        packages.push({
+          name,
+          version: typeof entry.version === "string" ? entry.version : undefined,
+          source: "lockfile",
+          serverName: path,
+        });
+      }
+    }
+
+    if (packages.length > 0) {
+      return packages;
+    }
+
+    const dependencies = lockfile.dependencies;
+    if (!isRecord(dependencies)) return [];
+
+    for (const [name, entry] of Object.entries(dependencies)) {
+      if (!looksLikePackageDependency(name) || !isRecord(entry)) continue;
+      packages.push({
+        name,
+        version: typeof entry.version === "string" ? entry.version : undefined,
+        source: "lockfile",
+        serverName: path,
+      });
     }
 
     return packages;
@@ -262,6 +358,16 @@ function looksLikeNpmPackage(name: string): boolean {
   if (name.includes("-mcp") || name.includes("mcp-")) return true;
   if (name.includes("-server") || name.includes("server-")) return true;
   return false;
+}
+
+function looksLikePackageDependency(name: string): boolean {
+  return /^(@[a-z0-9._-]+\/)?[a-z0-9._-]+$/i.test(name);
+}
+
+function normalizeManifestVersion(spec: string): string | undefined {
+  const normalized = spec.trim();
+  const exact = normalized.match(/^(?:npm:)?(?:[~^=<> ]*)(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/);
+  return exact?.[1];
 }
 
 /**

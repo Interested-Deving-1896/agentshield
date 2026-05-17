@@ -50,6 +50,8 @@ const HOOK_IMPLEMENTATION_EXTENSIONS = new Set([
 ]);
 
 const PACKAGE_MANAGER_CONFIG_FILES = new Set([
+  "package.json",
+  "package-lock.json",
   ".npmrc",
   ".pnpmrc",
   ".yarnrc",
@@ -164,6 +166,8 @@ function scanClaudeRoot(
     [".claude/router_runtime.js", "hook-code"],
     [".claude/setup.mjs", "hook-code"],
     [".vscode/tasks.json", "settings-json"],
+    ["package.json", "package-manager-config"],
+    ["package-lock.json", "package-manager-config"],
     [".npmrc", "package-manager-config"],
     [".pnpmrc", "package-manager-config"],
     [".yarnrc", "package-manager-config"],

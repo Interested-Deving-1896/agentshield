@@ -5,7 +5,7 @@ import type { Severity } from "../types.js";
 export interface ExtractedPackage {
   readonly name: string;
   readonly version?: string;
-  readonly source: "npx" | "command" | "args" | "git";
+  readonly source: "npx" | "command" | "args" | "git" | "manifest" | "lockfile";
   readonly serverName: string;
   readonly gitUrl?: string;
   readonly gitRef?: string;

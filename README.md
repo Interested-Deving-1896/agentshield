@@ -161,8 +161,9 @@ JSON reports now expose `findings[].runtimeConfidence` when AgentShield can dist
 | Missing timeouts | High-risk servers without timeout — resource exhaustion risk |
 
 Supply-chain verification (`agentshield scan --supply-chain`) extracts MCP
-package references and reports provenance counts for npm vs git, pinned vs
-unpinned, known-good packages, and npm-registry-backed metadata. Add
+package references plus root `package.json` and `package-lock.json` dependency
+evidence, then reports provenance counts for npm vs git, pinned vs unpinned,
+known-good packages, and npm-registry-backed metadata. Add
 `--supply-chain-online` to query npm for downloads, maintainers, postinstall
 scripts, deprecation, and package age.
 

@@ -88,11 +88,19 @@ describe("discoverConfigFiles", () => {
 
   it("discovers package-manager hardening configs", () => {
     const dir = createTempDir();
+    writeFileSync(join(dir, "package.json"), '{"dependencies":{}}');
+    writeFileSync(join(dir, "package-lock.json"), '{"lockfileVersion":3,"packages":{}}');
     writeFileSync(join(dir, ".npmrc"), "ignore-scripts=true");
     writeFileSync(join(dir, ".yarnrc.yml"), "enableScripts: false");
     writeFileSync(join(dir, "pnpm-workspace.yaml"), "minimumReleaseAge: 1440");
 
     const result = discoverConfigFiles(dir);
+    expect(
+      result.files.some((f) => f.path === "package.json" && f.type === "package-manager-config")
+    ).toBe(true);
+    expect(
+      result.files.some((f) => f.path === "package-lock.json" && f.type === "package-manager-config")
+    ).toBe(true);
     expect(
       result.files.some((f) => f.path === ".npmrc" && f.type === "package-manager-config")
     ).toBe(true);
