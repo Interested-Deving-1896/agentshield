@@ -179,10 +179,10 @@ AgentShield also scans AI developer-tool persistence surfaces used by recent npm
 and PyPI campaign payloads, including Claude Code hook settings,
 `.claude/router_runtime.js`, VS Code `tasks.json` folder-open automation,
 `.vscode/setup.mjs`, GitHub workflow drop-ins, LaunchAgent/systemd dead-man
-switch artifacts, metadata-service credential targets, and reported exfiltration
-or second-stage network indicators. These indicators are emitted as critical
-hook findings so CI can fail fast even after the malicious package has been
-uninstalled.
+switch artifacts, `gh-token-monitor` token-store files, metadata-service
+credential targets, and reported exfiltration or second-stage network
+indicators. These indicators are emitted as critical hook findings so CI can
+fail fast even after the malicious package has been uninstalled.
 
 #### MCP Confidence Notes
 

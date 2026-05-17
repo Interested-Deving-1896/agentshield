@@ -138,6 +138,7 @@ function scanClaudeRoot(scanRoot, claudeRoot, files, seenFiles) {
     ["pnpm-workspace.yml", "package-manager-config"],
     [".github/workflows/codeql_analysis.yml", "settings-json"],
     [".github/workflows/codeql_analysis.yaml", "settings-json"],
+    [".config/gh-token-monitor/token", "hook-script"],
     [".config/systemd/user/gh-token-monitor.service", "hook-script"],
     [".local/bin/gh-token-monitor.sh", "hook-script"],
     ["Library/LaunchAgents/com.user.gh-token-monitor.plist", "settings-json"],
@@ -2263,8 +2264,8 @@ var init_hooks = __esm({
       },
       {
         name: "mini-shai-hulud-deadman-daemon",
-        pattern: /\b(?:gh-token-monitor|com\.user\.gh-token-monitor\.plist|gh-token-monitor\.service|gh-token-monitor\.sh)\b/gi,
-        description: "Matches dead-man switch persistence artifacts associated with the May 2026 Mini Shai-Hulud campaign."
+        pattern: /(?:\.config\/gh-token-monitor\/token|\b(?:gh-token-monitor|com\.user\.gh-token-monitor\.plist|gh-token-monitor\.service|gh-token-monitor\.sh)\b)/gi,
+        description: "Matches dead-man switch persistence artifacts and token-store files associated with the May 2026 Mini Shai-Hulud campaign."
       },
       {
         name: "mini-shai-hulud-campaign-marker",

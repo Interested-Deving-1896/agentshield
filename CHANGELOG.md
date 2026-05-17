@@ -8,7 +8,8 @@ All notable changes to this project will be documented in this file.
   runtime before GitHub removes Node.js 20 support from hosted runners.
 - Added end-to-end scan coverage and README guidance for AI developer-tool
   persistence IOCs in Claude Code, VS Code, GitHub workflow, LaunchAgent, and
-  systemd automation surfaces.
+  systemd automation surfaces, including `gh-token-monitor` token-store
+  persistence.
 - Added evidence-pack fleet `operatorReadback` output with promotion status,
   deterministic review digest, owner counts, approval routes, and next-action
   guidance for GitHub App, Linear, and ECC Tools routing.

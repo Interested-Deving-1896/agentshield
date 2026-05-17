@@ -634,9 +634,9 @@ const AI_TOOL_PERSISTENCE_IOCS: ReadonlyArray<{
   {
     name: "mini-shai-hulud-deadman-daemon",
     pattern:
-      /\b(?:gh-token-monitor|com\.user\.gh-token-monitor\.plist|gh-token-monitor\.service|gh-token-monitor\.sh)\b/gi,
+      /(?:\.config\/gh-token-monitor\/token|\b(?:gh-token-monitor|com\.user\.gh-token-monitor\.plist|gh-token-monitor\.service|gh-token-monitor\.sh)\b)/gi,
     description:
-      "Matches dead-man switch persistence artifacts associated with the May 2026 Mini Shai-Hulud campaign.",
+      "Matches dead-man switch persistence artifacts and token-store files associated with the May 2026 Mini Shai-Hulud campaign.",
   },
   {
     name: "mini-shai-hulud-campaign-marker",

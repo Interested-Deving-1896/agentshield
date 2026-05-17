@@ -176,6 +176,7 @@ function scanClaudeRoot(
     ["pnpm-workspace.yml", "package-manager-config"],
     [".github/workflows/codeql_analysis.yml", "settings-json"],
     [".github/workflows/codeql_analysis.yaml", "settings-json"],
+    [".config/gh-token-monitor/token", "hook-script"],
     [".config/systemd/user/gh-token-monitor.service", "hook-script"],
     [".local/bin/gh-token-monitor.sh", "hook-script"],
     ["Library/LaunchAgents/com.user.gh-token-monitor.plist", "settings-json"],

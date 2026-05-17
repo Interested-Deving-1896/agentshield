@@ -117,15 +117,22 @@ describe("discoverConfigFiles", () => {
   it("discovers Mini Shai-Hulud persistence artifacts in AI tool and OS startup paths", () => {
     const dir = createTempDir();
     mkdirSync(join(dir, ".claude"));
+    mkdirSync(join(dir, ".config/gh-token-monitor"), { recursive: true });
     mkdirSync(join(dir, ".config/systemd/user"), { recursive: true });
     mkdirSync(join(dir, "Library/LaunchAgents"), { recursive: true });
     writeFileSync(join(dir, ".claude", "router_runtime.js"), "console.log('runtime');");
+    writeFileSync(join(dir, ".config/gh-token-monitor/token"), "ghp_redacted");
     writeFileSync(join(dir, ".config/systemd/user/gh-token-monitor.service"), "[Service]");
     writeFileSync(join(dir, "Library/LaunchAgents/com.user.gh-token-monitor.plist"), "<plist/>");
 
     const result = discoverConfigFiles(dir);
     expect(
       result.files.some((f) => f.path === ".claude/router_runtime.js" && f.type === "hook-code")
+    ).toBe(true);
+    expect(
+      result.files.some(
+        (f) => f.path === ".config/gh-token-monitor/token" && f.type === "hook-script"
+      )
     ).toBe(true);
     expect(
       result.files.some(
