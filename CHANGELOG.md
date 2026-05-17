@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 - Updated the GitHub Action metadata to run on the Node.js 24 JavaScript action
   runtime before GitHub removes Node.js 20 support from hosted runners.
+- Added end-to-end scan coverage and README guidance for AI developer-tool
+  persistence IOCs in Claude Code, VS Code, GitHub workflow, LaunchAgent, and
+  systemd automation surfaces.
 - Added evidence-pack fleet `operatorReadback` output with promotion status,
   deterministic review digest, owner counts, approval routes, and next-action
   guidance for GitHub App, Linear, and ECC Tools routing.

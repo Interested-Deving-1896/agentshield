@@ -175,6 +175,15 @@ blocking and unsupported release-age keys that can create false confidence; use
 pnpm `minimumReleaseAge` / `minimum-release-age`, Yarn `npmMinimalAgeGate`, or an
 external package-manager policy wrapper for cooldown enforcement.
 
+AgentShield also scans AI developer-tool persistence surfaces used by recent npm
+and PyPI campaign payloads, including Claude Code hook settings,
+`.claude/router_runtime.js`, VS Code `tasks.json` folder-open automation,
+`.vscode/setup.mjs`, GitHub workflow drop-ins, LaunchAgent/systemd dead-man
+switch artifacts, metadata-service credential targets, and reported exfiltration
+or second-stage network indicators. These indicators are emitted as critical
+hook findings so CI can fail fast even after the malicious package has been
+uninstalled.
+
 #### MCP Confidence Notes
 
 AgentShield scans both active MCP config and repository-shipped MCP templates.

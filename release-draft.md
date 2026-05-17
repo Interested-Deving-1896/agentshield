@@ -9,6 +9,9 @@ Linear, and ECC Tools flows can consume directly.
 
 - Updated the GitHub Action metadata to use GitHub's Node.js 24 JavaScript
   action runtime ahead of the Node.js 20 runner deprecation window.
+- Added end-to-end scan coverage and operator guidance for AI developer-tool
+  persistence IOCs across Claude Code hooks, VS Code tasks, GitHub workflow
+  drop-ins, and OS startup artifacts.
 - Added evidence-pack fleet `operatorReadback` output with ready/blocked status,
   deterministic review digest, owner counts, approval routes, blocking counts,
   and next-action guidance for promotion gates.
