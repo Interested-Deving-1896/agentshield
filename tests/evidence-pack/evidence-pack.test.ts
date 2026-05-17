@@ -770,9 +770,18 @@ describe("writeEvidencePack", () => {
       expect.objectContaining({
         route: "security-blocker",
         severity: "high",
+        owner: "affaan-m/risky-repo security owner",
         repository: "affaan-m/risky-repo",
         outputDir: riskyOutputDir,
         targetPath: "<target-path>",
+        beforeState: "Evidence pack has security blockers: 1 critical findings.",
+        afterState: "Critical and high findings are fixed, accepted by policy, or explicitly routed with owner approval.",
+        reversibleAction: "Revert the risky config change or keep the promotion blocked until a clean evidence pack is generated.",
+        actions: [
+          "Assign the pack to the repository security owner.",
+          "Fix or explicitly approve critical/high findings before promotion.",
+          "Regenerate and verify the evidence pack after remediation.",
+        ],
         evidencePaths: expect.arrayContaining([
           join(riskyOutputDir, "manifest.json"),
           join(riskyOutputDir, "agentshield-report.json"),
@@ -856,6 +865,11 @@ describe("writeEvidencePack", () => {
     expect(text.stdout).toContain("ready affaan-m/clean-repo");
     expect(text.stdout).toContain("Review items:");
     expect(text.stdout).toContain("high security-blocker affaan-m/risky-repo");
+    expect(text.stdout).toContain("owner: affaan-m/risky-repo security owner");
+    expect(text.stdout).toContain("before: Evidence pack has security blockers: 1 critical findings.");
+    expect(text.stdout).toContain("after: Critical and high findings are fixed, accepted by policy, or explicitly routed with owner approval.");
+    expect(text.stdout).toContain("reverse: Revert the risky config change or keep the promotion blocked until a clean evidence pack is generated.");
+    expect(text.stdout).toContain("- Assign the pack to the repository security owner.");
 
     const json = spawnSync(process.execPath, [
       CLI_PATH,
@@ -888,7 +902,16 @@ describe("writeEvidencePack", () => {
         {
           route: "security-blocker",
           severity: "high",
+          owner: "affaan-m/risky-repo security owner",
           repository: "affaan-m/risky-repo",
+          beforeState: "Evidence pack has security blockers: 1 critical findings.",
+          afterState: "Critical and high findings are fixed, accepted by policy, or explicitly routed with owner approval.",
+          reversibleAction: "Revert the risky config change or keep the promotion blocked until a clean evidence pack is generated.",
+          actions: [
+            "Assign the pack to the repository security owner.",
+            "Fix or explicitly approve critical/high findings before promotion.",
+            "Regenerate and verify the evidence pack after remediation.",
+          ],
           recommendation: "Route to security owner before promotion.",
         },
       ],

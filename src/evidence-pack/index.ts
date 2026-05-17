@@ -140,10 +140,15 @@ export interface EvidencePackFleetReviewItem {
   readonly route: EvidencePackFleetRoute;
   readonly severity: "high" | "medium" | "low" | "info";
   readonly outputDir: string;
+  readonly owner: string;
   readonly repository: string | null;
   readonly targetPath: string | null;
   readonly reason: string;
   readonly evidencePaths: ReadonlyArray<string>;
+  readonly beforeState: string;
+  readonly afterState: string;
+  readonly reversibleAction: string;
+  readonly actions: ReadonlyArray<string>;
   readonly recommendation: string;
 }
 
@@ -590,10 +595,15 @@ function buildFleetReviewItem(entry: EvidencePackFleetEntry): EvidencePackFleetR
     route: entry.route,
     severity: determineFleetReviewSeverity(entry.route),
     outputDir: entry.outputDir,
+    owner: buildFleetReviewOwner(entry),
     repository: entry.repository,
     targetPath: entry.targetPath,
     reason: entry.reason,
     evidencePaths: buildFleetReviewEvidencePaths(entry),
+    beforeState: buildFleetReviewBeforeState(entry),
+    afterState: buildFleetReviewAfterState(entry.route),
+    reversibleAction: buildFleetReviewReversibleAction(entry.route),
+    actions: buildFleetReviewActions(entry.route),
     recommendation: buildFleetReviewRecommendation(entry.route),
   };
 }
@@ -633,6 +643,74 @@ function buildFleetReviewRecommendation(route: EvidencePackFleetRoute): string {
   if (route === "baseline-regression") return "Route to baseline owner before accepting drift.";
   if (route === "supply-chain-review") return "Route to supply-chain owner before publication.";
   return "Keep evidence pack in the ready set.";
+}
+
+function buildFleetReviewOwner(entry: EvidencePackFleetEntry): string {
+  if (entry.repository) return `${entry.repository} security owner`;
+  if (entry.provider === "github-actions") return "repository security owner";
+  return "security owner queue";
+}
+
+function buildFleetReviewBeforeState(entry: EvidencePackFleetEntry): string {
+  if (entry.route === "invalid") return `Evidence pack failed verification: ${entry.reason}.`;
+  if (entry.route === "security-blocker") return `Evidence pack has security blockers: ${entry.reason}.`;
+  if (entry.route === "policy-review") return `Evidence pack policy status is failed for ${entry.repository ?? entry.outputDir}.`;
+  if (entry.route === "baseline-regression") return `Evidence pack baseline regressed for ${entry.repository ?? entry.outputDir}.`;
+  if (entry.route === "supply-chain-review") return `Evidence pack has supply-chain review findings: ${entry.reason}.`;
+  return "Evidence pack is ready.";
+}
+
+function buildFleetReviewAfterState(route: EvidencePackFleetRoute): string {
+  if (route === "invalid") return "Evidence pack verifies successfully and can be trusted as a routing artifact.";
+  if (route === "security-blocker") return "Critical and high findings are fixed, accepted by policy, or explicitly routed with owner approval.";
+  if (route === "policy-review") return "Policy violations are fixed or owner-approved exceptions are attached.";
+  if (route === "baseline-regression") return "Baseline drift is fixed, rolled back, or accepted with owner approval.";
+  if (route === "supply-chain-review") return "Risky packages are pinned, replaced, removed, or explicitly approved.";
+  return "Evidence pack remains in the ready set.";
+}
+
+function buildFleetReviewReversibleAction(route: EvidencePackFleetRoute): string {
+  if (route === "invalid") return "Discard the broken pack and rerun `agentshield scan --evidence-pack <dir>` from a clean workspace.";
+  if (route === "security-blocker") return "Revert the risky config change or keep the promotion blocked until a clean evidence pack is generated.";
+  if (route === "policy-review") return "Revert the policy change or keep the policy in report-only mode until exception approval lands.";
+  if (route === "baseline-regression") return "Restore the previous baseline or keep the new baseline unpromoted until drift is accepted.";
+  if (route === "supply-chain-review") return "Restore the prior dependency or package pin if review cannot approve the new package.";
+  return "Remove the ready pack from the fleet input if it should not participate in promotion.";
+}
+
+function buildFleetReviewActions(route: EvidencePackFleetRoute): ReadonlyArray<string> {
+  if (route === "invalid") {
+    return [
+      "Regenerate the evidence pack from the original scan target.",
+      "Run `agentshield evidence-pack verify <dir>` before adding it back to fleet routing.",
+    ];
+  }
+  if (route === "security-blocker") {
+    return [
+      "Assign the pack to the repository security owner.",
+      "Fix or explicitly approve critical/high findings before promotion.",
+      "Regenerate and verify the evidence pack after remediation.",
+    ];
+  }
+  if (route === "policy-review") {
+    return [
+      "Route policy failures to the policy owner.",
+      "Attach an approved exception or update the policy/finding before promotion.",
+    ];
+  }
+  if (route === "baseline-regression") {
+    return [
+      "Route baseline drift to the baseline owner.",
+      "Attach rollback evidence or accepted-drift approval before promotion.",
+    ];
+  }
+  if (route === "supply-chain-review") {
+    return [
+      "Route risky packages to the supply-chain owner.",
+      "Pin, replace, remove, or approve the package and rerun supply-chain evidence.",
+    ];
+  }
+  return ["Keep the evidence pack in the ready set."];
 }
 
 function summarizeFleetEntry(inspection: EvidencePackInspectionResult): EvidencePackFleetEntry {
