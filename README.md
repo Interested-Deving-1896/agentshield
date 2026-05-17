@@ -166,6 +166,10 @@ unpinned, known-good packages, and npm-registry-backed metadata. Add
 `--supply-chain-online` to query npm for downloads, maintainers, postinstall
 scripts, deprecation, and package age.
 
+Package-manager hardening checks also scan `.npmrc`, `.yarnrc.yml`, and
+`pnpm-workspace.yaml` for plaintext registry credentials, explicit dependency
+lifecycle-script enablement, and missing or weak release-age cooldowns.
+
 #### MCP Confidence Notes
 
 AgentShield scans both active MCP config and repository-shipped MCP templates.

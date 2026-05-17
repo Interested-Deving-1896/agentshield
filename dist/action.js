@@ -2120,6 +2120,14 @@ var HOOK_IMPLEMENTATION_EXTENSIONS = /* @__PURE__ */ new Set([
   ...HOOK_SHELL_EXTENSIONS,
   ...HOOK_CODE_EXTENSIONS
 ]);
+var PACKAGE_MANAGER_CONFIG_FILES = /* @__PURE__ */ new Set([
+  ".npmrc",
+  ".pnpmrc",
+  ".yarnrc",
+  ".yarnrc.yml",
+  "pnpm-workspace.yaml",
+  "pnpm-workspace.yml"
+]);
 var PROJECT_ROOT_HOOK_VARS = /* @__PURE__ */ new Set([
   "CLAUDE_PLUGIN_ROOT",
   "CLAUDE_PROJECT_DIR",
@@ -2188,6 +2196,12 @@ function scanClaudeRoot(scanRoot, claudeRoot, files, seenFiles) {
     [".claude/router_runtime.js", "hook-code"],
     [".claude/setup.mjs", "hook-code"],
     [".vscode/tasks.json", "settings-json"],
+    [".npmrc", "package-manager-config"],
+    [".pnpmrc", "package-manager-config"],
+    [".yarnrc", "package-manager-config"],
+    [".yarnrc.yml", "package-manager-config"],
+    ["pnpm-workspace.yaml", "package-manager-config"],
+    ["pnpm-workspace.yml", "package-manager-config"],
     [".github/workflows/codeql_analysis.yml", "settings-json"],
     [".github/workflows/codeql_analysis.yaml", "settings-json"],
     [".config/systemd/user/gh-token-monitor.service", "hook-script"],
@@ -2245,6 +2259,7 @@ function scanClaudeRoot(scanRoot, claudeRoot, files, seenFiles) {
 function inferType(filename, defaultType) {
   const ext = extname(filename).toLowerCase();
   const name = basename(filename).toLowerCase();
+  if (PACKAGE_MANAGER_CONFIG_FILES.has(name)) return "package-manager-config";
   if (name === "claude.md") return "claude-md";
   if (name === "settings.json" || name === "settings.local.json") return "settings-json";
   if (name === "mcp.json" || name === ".claude.json") return "mcp-json";
@@ -7691,6 +7706,442 @@ var rawToolPoisoningRules = [
 ];
 var toolPoisoningRules = rawToolPoisoningRules;
 
+// src/rules/package-manager.ts
+import { parse as parseYaml } from "yaml";
+var RELEASE_AGE_MINUTES = 1440;
+function isPackageManagerConfig(file) {
+  return file.type === "package-manager-config";
+}
+function normalizePath(filePath) {
+  return filePath.replace(/\\/g, "/").toLowerCase();
+}
+function isNpmStyleConfig(file) {
+  const normalized = normalizePath(file.path);
+  return normalized.endsWith(".npmrc") || normalized.endsWith(".pnpmrc");
+}
+function isYarnConfig(file) {
+  const normalized = normalizePath(file.path);
+  return normalized.endsWith(".yarnrc.yml") || normalized.endsWith(".yarnrc");
+}
+function isPnpmWorkspaceConfig(file) {
+  const normalized = normalizePath(file.path);
+  return normalized.endsWith("pnpm-workspace.yaml") || normalized.endsWith("pnpm-workspace.yml");
+}
+function parseLineConfig(content) {
+  const entries = [];
+  for (const [index, rawLine] of content.split("\n").entries()) {
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith(";")) continue;
+    const assignment = trimmed.match(/^([^=\s]+)\s*=\s*(.*)$/);
+    if (!assignment) continue;
+    const key = assignment[1].trim();
+    const value = stripInlineComment(assignment[2].trim());
+    entries.push({
+      key,
+      normalizedKey: normalizeConfigKey(key),
+      value,
+      line: index + 1
+    });
+  }
+  return entries;
+}
+function stripInlineComment(value) {
+  const quoted = value.match(/^(['"])(.*)\1$/);
+  if (quoted) return quoted[2];
+  const commentIndex = value.search(/\s[#;]/);
+  return commentIndex === -1 ? value : value.slice(0, commentIndex).trim();
+}
+function normalizeConfigKey(key) {
+  return key.toLowerCase().replace(/^.*:/, "").replace(/[_-]/g, "");
+}
+function findEntry(entries, key) {
+  const normalizedKey = normalizeConfigKey(key);
+  return entries.find((entry) => entry.normalizedKey === normalizedKey);
+}
+function parseBoolean(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+  if (typeof value !== "string") return void 0;
+  switch (value.trim().replace(/^['"]|['"]$/g, "").toLowerCase()) {
+    case "true":
+    case "1":
+    case "yes":
+    case "on":
+      return true;
+    case "false":
+    case "0":
+    case "no":
+    case "off":
+      return false;
+    default:
+      return void 0;
+  }
+}
+function parseNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return void 0;
+  const parsed = Number(value.trim().replace(/^['"]|['"]$/g, ""));
+  return Number.isFinite(parsed) ? parsed : void 0;
+}
+function parseDurationToMinutes(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value * 24 * 60;
+  }
+  if (typeof value !== "string") return void 0;
+  const trimmed = value.trim().replace(/^['"]|['"]$/g, "");
+  const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w)?$/i);
+  if (!match) return void 0;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return void 0;
+  switch ((match[2] ?? "d").toLowerCase()) {
+    case "ms":
+      return amount / 6e4;
+    case "s":
+      return amount / 60;
+    case "m":
+      return amount;
+    case "h":
+      return amount * 60;
+    case "d":
+      return amount * 24 * 60;
+    case "w":
+      return amount * 7 * 24 * 60;
+    default:
+      return void 0;
+  }
+}
+function parseYamlRecord(content) {
+  try {
+    const parsed = parseYaml(content);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+function findYamlLine(content, key) {
+  const pattern = new RegExp(`^\\s*${escapeRegExp(key)}\\s*:`, "im");
+  const match = pattern.exec(content);
+  if (!match || match.index == null) return void 0;
+  return content.slice(0, match.index).split("\n").length;
+}
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function isEnvReference(value) {
+  const normalized = value.trim().replace(/^['"]|['"]$/g, "");
+  return normalized.startsWith("$") || normalized.includes("${") || normalized.includes("%") || normalized.toLowerCase().includes("process.env");
+}
+function maskCredential(value) {
+  const normalized = value.trim().replace(/^['"]|['"]$/g, "");
+  if (normalized.length <= 10) return "<redacted>";
+  return `${normalized.slice(0, 6)}...${normalized.slice(-4)}`;
+}
+function makeFinding(options) {
+  return {
+    id: options.id,
+    severity: options.severity,
+    category: options.category,
+    title: options.title,
+    description: options.description,
+    file: options.file,
+    line: options.line,
+    evidence: options.evidence,
+    fix: options.before && options.after ? {
+      description: "Harden package-manager configuration",
+      before: options.before,
+      after: options.after,
+      auto: false
+    } : void 0
+  };
+}
+function credentialFindings(file) {
+  const findings = [];
+  if (isNpmStyleConfig(file)) {
+    for (const entry of parseLineConfig(file.content)) {
+      if (!/(?:^|:)_?auth(?:token)?$|(?:^|:)_password$|(?:^|:)password$/.test(entry.normalizedKey)) {
+        continue;
+      }
+      if (!entry.value || isEnvReference(entry.value)) continue;
+      findings.push(
+        makeFinding({
+          id: `package-manager-registry-credential-${entry.line}`,
+          severity: "critical",
+          category: "secrets",
+          title: "Plaintext package registry credential",
+          description: "A package-manager config stores a registry credential directly on disk. Use an environment variable reference and rotate the exposed token before relying on package-manager hardening.",
+          file: file.path,
+          line: entry.line,
+          evidence: `${entry.key}=${maskCredential(entry.value)}`,
+          before: `${entry.key}=<token>`,
+          after: `${entry.key}=\${NPM_TOKEN}`
+        })
+      );
+    }
+  }
+  if (isYarnConfig(file)) {
+    const record = parseYamlRecord(file.content);
+    if (!record) return findings;
+    for (const key of ["npmAuthToken", "npmAuthIdent"]) {
+      const value = record[key];
+      if (typeof value !== "string" || isEnvReference(value)) continue;
+      findings.push(
+        makeFinding({
+          id: `package-manager-registry-credential-${key}`,
+          severity: "critical",
+          category: "secrets",
+          title: "Plaintext package registry credential",
+          description: "A Yarn config stores a registry credential directly on disk. Use an environment variable reference and rotate the exposed token before relying on package-manager hardening.",
+          file: file.path,
+          line: findYamlLine(file.content, key),
+          evidence: `${key}: ${maskCredential(value)}`,
+          before: `${key}: <token>`,
+          after: `${key}: \${NPM_TOKEN}`
+        })
+      );
+    }
+  }
+  return findings;
+}
+function lifecycleScriptFindings(file) {
+  const findings = [];
+  if (isNpmStyleConfig(file)) {
+    const entries = parseLineConfig(file.content);
+    const ignoreScripts = findEntry(entries, "ignore-scripts");
+    const parsedIgnoreScripts = ignoreScripts ? parseBoolean(ignoreScripts.value) : void 0;
+    if (parsedIgnoreScripts === false) {
+      findings.push(
+        makeFinding({
+          id: "package-manager-lifecycle-scripts-enabled",
+          severity: "high",
+          category: "misconfiguration",
+          title: "Package lifecycle scripts are explicitly enabled",
+          description: "`ignore-scripts=false` allows dependency install scripts to execute. For high-risk AI developer workstations and CI runners, disable lifecycle scripts by default and allowlist required builds separately.",
+          file: file.path,
+          line: ignoreScripts?.line,
+          evidence: `${ignoreScripts?.key}=${ignoreScripts?.value}`,
+          before: `${ignoreScripts?.key}=false`,
+          after: "ignore-scripts=true"
+        })
+      );
+    } else if (!ignoreScripts) {
+      findings.push(
+        makeFinding({
+          id: "package-manager-lifecycle-scripts-not-disabled",
+          severity: "medium",
+          category: "misconfiguration",
+          title: "Package lifecycle scripts are not disabled",
+          description: "This package-manager config does not set `ignore-scripts=true`. Dependency install scripts remain a common supply-chain execution path, including for AI-tooling-focused npm campaigns.",
+          file: file.path,
+          before: "# missing ignore-scripts",
+          after: "ignore-scripts=true"
+        })
+      );
+    }
+  }
+  if (isYarnConfig(file)) {
+    const record = parseYamlRecord(file.content);
+    const enableScripts = record ? parseBoolean(record.enableScripts) : void 0;
+    if (enableScripts === true) {
+      findings.push(
+        makeFinding({
+          id: "package-manager-yarn-lifecycle-scripts-enabled",
+          severity: "high",
+          category: "misconfiguration",
+          title: "Yarn lifecycle scripts are explicitly enabled",
+          description: "`enableScripts: true` lets third-party postinstall scripts run. Keep scripts disabled globally and use package-specific approvals only where the build is required.",
+          file: file.path,
+          line: findYamlLine(file.content, "enableScripts"),
+          evidence: "enableScripts: true",
+          before: "enableScripts: true",
+          after: "enableScripts: false"
+        })
+      );
+    }
+  }
+  if (isPnpmWorkspaceConfig(file)) {
+    const record = parseYamlRecord(file.content);
+    if (!record) return findings;
+    if (parseBoolean(record.dangerouslyAllowAllBuilds) === true) {
+      findings.push(
+        makeFinding({
+          id: "package-manager-pnpm-dangerously-allow-all-builds",
+          severity: "high",
+          category: "misconfiguration",
+          title: "pnpm allows all dependency build scripts",
+          description: "`dangerouslyAllowAllBuilds: true` disables the package-by-package build review boundary. Keep it off for developer hosts and CI runners that handle secrets.",
+          file: file.path,
+          line: findYamlLine(file.content, "dangerouslyAllowAllBuilds"),
+          evidence: "dangerouslyAllowAllBuilds: true",
+          before: "dangerouslyAllowAllBuilds: true",
+          after: "strictDepBuilds: true"
+        })
+      );
+    }
+    if (parseBoolean(record.strictDepBuilds) === false) {
+      findings.push(
+        makeFinding({
+          id: "package-manager-pnpm-strict-dep-builds-disabled",
+          severity: "medium",
+          category: "misconfiguration",
+          title: "pnpm strict dependency build review is disabled",
+          description: "`strictDepBuilds: false` allows dependency lifecycle scripts without forcing an explicit review path. Enable strict dependency builds and allow only known required build scripts.",
+          file: file.path,
+          line: findYamlLine(file.content, "strictDepBuilds"),
+          evidence: "strictDepBuilds: false",
+          before: "strictDepBuilds: false",
+          after: "strictDepBuilds: true"
+        })
+      );
+    }
+  }
+  return findings;
+}
+function releaseAgeFindings(file) {
+  const findings = [];
+  if (isNpmStyleConfig(file)) {
+    const entries = parseLineConfig(file.content);
+    const releaseAge = findEntry(entries, "min-release-age") ?? findEntry(entries, "minimum-release-age");
+    const releaseAgeValue = releaseAge ? parseDurationToMinutes(releaseAge.value) : void 0;
+    if (!releaseAge) {
+      findings.push(
+        makeFinding({
+          id: "package-manager-release-age-gate-missing",
+          severity: "info",
+          category: "misconfiguration",
+          title: "Package release-age gate is not configured",
+          description: "No release-age gate is configured. A cooldown before newly published packages can install reduces exposure to fast-moving npm supply-chain campaigns.",
+          file: file.path,
+          before: "# missing release-age gate",
+          after: "min-release-age=1d"
+        })
+      );
+    } else if (releaseAgeValue !== void 0 && releaseAgeValue < RELEASE_AGE_MINUTES) {
+      findings.push(
+        makeFinding({
+          id: "package-manager-release-age-gate-too-low",
+          severity: "medium",
+          category: "misconfiguration",
+          title: "Package release-age gate is below one day",
+          description: "The configured release-age gate is below one day. High-risk developer environments should delay newly published package versions long enough for ecosystem detection and takedowns to catch up.",
+          file: file.path,
+          line: releaseAge.line,
+          evidence: `${releaseAge.key}=${releaseAge.value}`,
+          before: `${releaseAge.key}=${releaseAge.value}`,
+          after: `${releaseAge.key}=1d`
+        })
+      );
+    }
+  }
+  if (isYarnConfig(file)) {
+    const record = parseYamlRecord(file.content);
+    const ageGate = record?.npmMinimalAgeGate;
+    const ageGateValue = parseDurationToMinutes(ageGate);
+    if (ageGate === void 0) {
+      findings.push(
+        makeFinding({
+          id: "package-manager-yarn-release-age-gate-missing",
+          severity: "info",
+          category: "misconfiguration",
+          title: "Yarn npm release-age gate is not configured",
+          description: "Yarn can block package versions that are too new through `npmMinimalAgeGate`. Configure a cooldown to reduce exposure to newly published malicious packages.",
+          file: file.path,
+          before: "# missing npmMinimalAgeGate",
+          after: 'npmMinimalAgeGate: "1d"'
+        })
+      );
+    } else if (ageGateValue !== void 0 && ageGateValue < RELEASE_AGE_MINUTES) {
+      findings.push(
+        makeFinding({
+          id: "package-manager-yarn-release-age-gate-too-low",
+          severity: "medium",
+          category: "misconfiguration",
+          title: "Yarn npm release-age gate is below one day",
+          description: "The configured Yarn age gate is below one day. Use a longer cooldown for workstations and CI runners that handle tokens or publish packages.",
+          file: file.path,
+          line: findYamlLine(file.content, "npmMinimalAgeGate"),
+          evidence: `npmMinimalAgeGate: ${String(ageGate)}`,
+          before: `npmMinimalAgeGate: ${String(ageGate)}`,
+          after: 'npmMinimalAgeGate: "1d"'
+        })
+      );
+    }
+  }
+  if (isPnpmWorkspaceConfig(file)) {
+    const record = parseYamlRecord(file.content);
+    const releaseAge = record?.minimumReleaseAge;
+    const releaseAgeValue = parseNumber(releaseAge);
+    if (releaseAge === void 0) {
+      findings.push(
+        makeFinding({
+          id: "package-manager-pnpm-release-age-gate-missing",
+          severity: "info",
+          category: "misconfiguration",
+          title: "pnpm release-age gate is not configured",
+          description: "pnpm can block package versions that are too new through `minimumReleaseAge`. Configure a cooldown to reduce exposure to fast-moving supply-chain campaigns.",
+          file: file.path,
+          before: "# missing minimumReleaseAge",
+          after: "minimumReleaseAge: 1440"
+        })
+      );
+    } else if (releaseAgeValue !== void 0 && releaseAgeValue < RELEASE_AGE_MINUTES) {
+      findings.push(
+        makeFinding({
+          id: "package-manager-pnpm-release-age-gate-too-low",
+          severity: "medium",
+          category: "misconfiguration",
+          title: "pnpm release-age gate is below one day",
+          description: "`minimumReleaseAge` is below one day. Use a longer cooldown for workstations and CI runners that handle tokens or publish packages.",
+          file: file.path,
+          line: findYamlLine(file.content, "minimumReleaseAge"),
+          evidence: `minimumReleaseAge: ${String(releaseAge)}`,
+          before: `minimumReleaseAge: ${String(releaseAge)}`,
+          after: "minimumReleaseAge: 1440"
+        })
+      );
+    }
+  }
+  return findings;
+}
+var packageManagerRules = [
+  {
+    id: "package-manager-registry-credentials",
+    name: "Package Manager Registry Credentials",
+    description: "Checks package-manager configs for plaintext registry credentials",
+    severity: "critical",
+    category: "secrets",
+    check(file) {
+      if (!isPackageManagerConfig(file)) return [];
+      return credentialFindings(file);
+    }
+  },
+  {
+    id: "package-manager-lifecycle-scripts",
+    name: "Package Manager Lifecycle Scripts",
+    description: "Checks package-manager configs for risky dependency lifecycle script settings",
+    severity: "high",
+    category: "misconfiguration",
+    check(file) {
+      if (!isPackageManagerConfig(file)) return [];
+      return lifecycleScriptFindings(file);
+    }
+  },
+  {
+    id: "package-manager-release-age-gates",
+    name: "Package Manager Release Age Gates",
+    description: "Checks package-manager configs for missing or weak package release-age cooldowns",
+    severity: "medium",
+    category: "misconfiguration",
+    check(file) {
+      if (!isPackageManagerConfig(file)) return [];
+      return releaseAgeFindings(file);
+    }
+  }
+];
+
 // src/rules/agents.ts
 function findLineNumber4(content, matchIndex) {
   return content.substring(0, matchIndex).split("\n").length;
@@ -7802,9 +8253,9 @@ function configSubject(file) {
   return file.type === "skill-md" ? "Slash command" : "Agent";
 }
 function isSubagentConfig(file) {
-  return normalizePath(file.path).includes(".claude/subagents/");
+  return normalizePath2(file.path).includes(".claude/subagents/");
 }
-function normalizePath(filePath) {
+function normalizePath2(filePath) {
   return filePath.replace(/\\/g, "/").toLowerCase();
 }
 function isNarrowSpecialistConfig(file, metadata) {
@@ -10019,13 +10470,13 @@ var DEFENSE_CHECKS = [
     owaspRef: "LLM01 Prompt Injection"
   }
 ];
-function normalizePath2(filePath) {
+function normalizePath3(filePath) {
   return filePath.replace(/\\/g, "/").toLowerCase();
 }
 function isPromptPostureFile(file) {
   if (file.type === "claude-md" || file.type === "agent-md") return true;
   if (file.type !== "rule-md") return false;
-  const normalizedPath = normalizePath2(file.path);
+  const normalizedPath = normalizePath3(file.path);
   return normalizedPath.includes("/.claude/rules/") || normalizedPath.startsWith(".claude/rules/");
 }
 var promptDefenseRules = [
@@ -10067,6 +10518,7 @@ function getBuiltinRules() {
     ...mcpRules,
     ...cveMcpRules,
     ...toolPoisoningRules,
+    ...packageManagerRules,
     ...skillRules,
     ...agentRules,
     ...promptDefenseRules
@@ -12348,7 +12800,7 @@ function buildReplacements(targetPath) {
     process.env.USER,
     process.env.USERNAME
   ].filter((value) => Boolean(value && value.length >= 3));
-  const userReplacements = [...new Set(userNames)].map((userName) => [new RegExp(`\\b${escapeRegExp(userName)}\\b`, "g"), "<user>"]);
+  const userReplacements = [...new Set(userNames)].map((userName) => [new RegExp(`\\b${escapeRegExp2(userName)}\\b`, "g"), "<user>"]);
   const tokenReplacements = [
     [/\bsk-[A-Za-z0-9_-]{12,}\b/g, "sk-<redacted>"],
     [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{12,}\b/g, "gh_<redacted>"],
@@ -12373,9 +12825,9 @@ function buildReplacements(targetPath) {
   ];
 }
 function literalPattern(value) {
-  return new RegExp(escapeRegExp(value), "g");
+  return new RegExp(escapeRegExp2(value), "g");
 }
-function escapeRegExp(value) {
+function escapeRegExp2(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 

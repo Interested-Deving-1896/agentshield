@@ -86,6 +86,26 @@ describe("discoverConfigFiles", () => {
     ).toBe(true);
   });
 
+  it("discovers package-manager hardening configs", () => {
+    const dir = createTempDir();
+    writeFileSync(join(dir, ".npmrc"), "ignore-scripts=true");
+    writeFileSync(join(dir, ".yarnrc.yml"), "enableScripts: false");
+    writeFileSync(join(dir, "pnpm-workspace.yaml"), "minimumReleaseAge: 1440");
+
+    const result = discoverConfigFiles(dir);
+    expect(
+      result.files.some((f) => f.path === ".npmrc" && f.type === "package-manager-config")
+    ).toBe(true);
+    expect(
+      result.files.some((f) => f.path === ".yarnrc.yml" && f.type === "package-manager-config")
+    ).toBe(true);
+    expect(
+      result.files.some(
+        (f) => f.path === "pnpm-workspace.yaml" && f.type === "package-manager-config"
+      )
+    ).toBe(true);
+  });
+
   it("discovers Mini Shai-Hulud persistence artifacts in AI tool and OS startup paths", () => {
     const dir = createTempDir();
     mkdirSync(join(dir, ".claude"));

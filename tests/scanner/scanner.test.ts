@@ -55,6 +55,24 @@ describe("scanner", () => {
       expect(result.findings.some((f) => f.category === "injection")).toBe(true);
     });
 
+    it("detects package-manager supply-chain hardening drift", () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "agentshield-scan-"));
+      writeFileSync(
+        join(tempDir, ".npmrc"),
+        [
+          "//registry.npmjs.org/:_authToken=npm_123456789012345678901234567890123456",
+          "ignore-scripts=false",
+          "min-release-age=12h",
+        ].join("\n"),
+      );
+
+      const result = scan(tempDir);
+
+      expect(result.findings.some((f) => f.id.includes("package-manager-registry-credential"))).toBe(true);
+      expect(result.findings.some((f) => f.id === "package-manager-lifecycle-scripts-enabled")).toBe(true);
+      expect(result.findings.some((f) => f.id === "package-manager-release-age-gate-too-low")).toBe(true);
+    });
+
     it("detects risky MCP servers", () => {
       const result = scan(VULNERABLE_PATH);
       expect(result.findings.some((f) => f.title.includes("shell-runner"))).toBe(true);

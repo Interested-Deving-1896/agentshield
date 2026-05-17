@@ -5,6 +5,7 @@ import { hookRules } from "./hooks.js";
 import { mcpRules } from "./mcp.js";
 import { cveMcpRules } from "./mcp-cve.js";
 import { toolPoisoningRules } from "./mcp-tool-poisoning.js";
+import { packageManagerRules } from "./package-manager.js";
 import { agentRules } from "./agents.js";
 import { skillRules } from "./skills.js";
 import { promptDefenseRules } from "./prompt-defense.js";
@@ -21,6 +22,7 @@ export function getBuiltinRules(): ReadonlyArray<Rule> {
     ...mcpRules,
     ...cveMcpRules,
     ...toolPoisoningRules,
+    ...packageManagerRules,
     ...skillRules,
     ...agentRules,
     ...promptDefenseRules,

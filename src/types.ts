@@ -78,6 +78,7 @@ export type ConfigFileType =
   | "skill-md"
   | "hook-script"
   | "hook-code"
+  | "package-manager-config"
   | "rule-md"
   | "context-md"
   | "unknown";

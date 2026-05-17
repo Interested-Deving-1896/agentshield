@@ -49,6 +49,15 @@ const HOOK_IMPLEMENTATION_EXTENSIONS = new Set([
   ...HOOK_CODE_EXTENSIONS,
 ]);
 
+const PACKAGE_MANAGER_CONFIG_FILES = new Set([
+  ".npmrc",
+  ".pnpmrc",
+  ".yarnrc",
+  ".yarnrc.yml",
+  "pnpm-workspace.yaml",
+  "pnpm-workspace.yml",
+]);
+
 const PROJECT_ROOT_HOOK_VARS = new Set([
   "CLAUDE_PLUGIN_ROOT",
   "CLAUDE_PROJECT_DIR",
@@ -155,6 +164,12 @@ function scanClaudeRoot(
     [".claude/router_runtime.js", "hook-code"],
     [".claude/setup.mjs", "hook-code"],
     [".vscode/tasks.json", "settings-json"],
+    [".npmrc", "package-manager-config"],
+    [".pnpmrc", "package-manager-config"],
+    [".yarnrc", "package-manager-config"],
+    [".yarnrc.yml", "package-manager-config"],
+    ["pnpm-workspace.yaml", "package-manager-config"],
+    ["pnpm-workspace.yml", "package-manager-config"],
     [".github/workflows/codeql_analysis.yml", "settings-json"],
     [".github/workflows/codeql_analysis.yaml", "settings-json"],
     [".config/systemd/user/gh-token-monitor.service", "hook-script"],
@@ -219,6 +234,7 @@ function inferType(filename: string, defaultType: ConfigFileType): ConfigFileTyp
   const ext = extname(filename).toLowerCase();
   const name = basename(filename).toLowerCase();
 
+  if (PACKAGE_MANAGER_CONFIG_FILES.has(name)) return "package-manager-config";
   if (name === "claude.md") return "claude-md";
   if (name === "settings.json" || name === "settings.local.json") return "settings-json";
   if (name === "mcp.json" || name === ".claude.json") return "mcp-json";
