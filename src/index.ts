@@ -1214,7 +1214,12 @@ policyCmd
       console.log(`  Source:      ${result.sourceFile}`);
       console.log(`  Output:      ${result.outputPath}`);
       console.log(`  Digest:      ${result.sha256}`);
-      console.log(`  Written:     ${result.promoted ? "yes" : "no (dry run)"}\n`);
+      console.log(`  Written:     ${result.promoted ? "yes" : "no (dry run)"}`);
+      console.log("  Review:");
+      for (const item of result.reviewItems) {
+        console.log(`  - ${item.status} ${item.id}: ${item.recommendation}`);
+      }
+      console.log("");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`\n  Error: ${message}\n`);

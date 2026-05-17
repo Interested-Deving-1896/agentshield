@@ -35,6 +35,17 @@ export interface PolicyPackPromotionResult {
   readonly verified: true;
   readonly promoted: boolean;
   readonly dryRun: boolean;
+  readonly reviewItems: ReadonlyArray<PolicyPackPromotionReviewItem>;
+}
+
+export interface PolicyPackPromotionReviewItem {
+  readonly id: string;
+  readonly status: "verified" | "action_required";
+  readonly severity: "info" | "medium";
+  readonly title: string;
+  readonly detail: string;
+  readonly evidencePaths: ReadonlyArray<string>;
+  readonly recommendation: string;
 }
 
 interface ExportManifestEntry {
@@ -75,7 +86,11 @@ export function promotePolicyPack(options: PromotePolicyPackOptions): PolicyPack
     );
   }
 
-  if (!options.dryRun) {
+  const owners = policy.owners ?? [];
+  const dryRun = Boolean(options.dryRun);
+  const promoted = !dryRun;
+
+  if (!dryRun) {
     mkdirSync(dirname(options.outputPath), { recursive: true });
     writeFileSync(options.outputPath, policyJson);
   }
@@ -86,12 +101,82 @@ export function promotePolicyPack(options: PromotePolicyPackOptions): PolicyPack
     outputPath: options.outputPath,
     pack: entry.id,
     policyName: policy.name ?? "Organization Policy",
-    owners: policy.owners ?? [],
+    owners,
     sha256: entry.sha256,
     verified: true,
-    promoted: !options.dryRun,
-    dryRun: Boolean(options.dryRun),
+    promoted,
+    dryRun,
+    reviewItems: buildPromotionReviewItems({
+      manifestPath: options.manifestPath,
+      sourceFile,
+      outputPath: options.outputPath,
+      pack: entry.id,
+      owners,
+      sha256: entry.sha256,
+      dryRun,
+      promoted,
+    }),
   };
+}
+
+function buildPromotionReviewItems(options: {
+  readonly manifestPath: string;
+  readonly sourceFile: string;
+  readonly outputPath: string;
+  readonly pack: PolicyPack;
+  readonly owners: ReadonlyArray<string>;
+  readonly sha256: string;
+  readonly dryRun: boolean;
+  readonly promoted: boolean;
+}): ReadonlyArray<PolicyPackPromotionReviewItem> {
+  const policyForSmoke = options.promoted ? options.outputPath : options.sourceFile;
+
+  return [
+    {
+      id: "manifest-digest-verified",
+      status: "verified",
+      severity: "info",
+      title: "Manifest digest verified",
+      detail: `${options.pack} matched ${options.sha256}.`,
+      evidencePaths: [options.manifestPath, options.sourceFile],
+      recommendation: "Attach the manifest and exported policy to the policy promotion review.",
+    },
+    {
+      id: "policy-owner-review",
+      status: options.owners.length > 0 ? "verified" : "action_required",
+      severity: options.owners.length > 0 ? "info" : "medium",
+      title: "Policy owner review",
+      detail: options.owners.length > 0
+        ? `Owners: ${options.owners.join(", ")}.`
+        : "No policy owners are declared on the exported policy.",
+      evidencePaths: [options.sourceFile],
+      recommendation: options.owners.length > 0
+        ? "Require one listed owner to approve the protected rollout PR."
+        : "Add at least one policy owner before promoting this pack outside a sandbox.",
+    },
+    {
+      id: "protected-rollout-pr",
+      status: options.promoted ? "verified" : "action_required",
+      severity: options.promoted ? "info" : "medium",
+      title: "Protected rollout path",
+      detail: options.promoted
+        ? `Active policy written to ${options.outputPath}.`
+        : `Dry run only; ${options.outputPath} was not written.`,
+      evidencePaths: [options.manifestPath, options.sourceFile],
+      recommendation: options.promoted
+        ? "Keep subsequent policy changes behind branch protection, CI, and owner approval."
+        : `Open a protected PR that promotes ${options.sourceFile} to ${options.outputPath} and requires CI plus owner approval.`,
+    },
+    {
+      id: "runtime-smoke-test",
+      status: "action_required",
+      severity: "medium",
+      title: "Runtime smoke test",
+      detail: `Promotion did not run a repository scan with ${policyForSmoke}.`,
+      evidencePaths: [policyForSmoke],
+      recommendation: `Run agentshield scan --policy ${policyForSmoke} before enabling this policy as an enforcing CI gate.`,
+    },
+  ];
 }
 
 function readExportManifest(manifestPath: string): ExportManifest {

@@ -656,6 +656,8 @@ export manifest, verifies the selected policy file digest, validates the policy
 schema, and only then writes the active policy path. Use `--dry-run --json` in
 review workflows to prove the exact pack, source file, output path, owner list,
 and digest before a protected branch or operator copies the policy into place.
+Promotion results also include `reviewItems` for owner approval, protected PR
+rollout, and the runtime smoke test needed before enabling an enforcing CI gate.
 
 ```json
 {

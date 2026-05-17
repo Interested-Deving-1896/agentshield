@@ -27,6 +27,7 @@ export type {
 } from "./export.js";
 export type {
   PromotePolicyPackOptions,
+  PolicyPackPromotionReviewItem,
   PolicyPackPromotionResult,
 } from "./promote.js";
 export {

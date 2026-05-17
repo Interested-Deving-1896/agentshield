@@ -39,6 +39,22 @@ describe("policy pack promotion", () => {
       verified: true,
     });
     expect(result.sha256).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(result.reviewItems).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "manifest-digest-verified",
+        status: "verified",
+        evidencePaths: [join(outputDir, "manifest.json"), join(outputDir, "enterprise-policy.json")],
+      }),
+      expect.objectContaining({
+        id: "policy-owner-review",
+        status: "verified",
+        recommendation: "Require one listed owner to approve the protected rollout PR.",
+      }),
+      expect.objectContaining({
+        id: "runtime-smoke-test",
+        status: "action_required",
+      }),
+    ]));
     expect(existsSync(activePolicyPath)).toBe(true);
 
     const policy = readJson<Record<string, unknown>>(activePolicyPath);
@@ -60,6 +76,17 @@ describe("policy pack promotion", () => {
     expect(result.pack).toBe("ci-enforcement");
     expect(result.promoted).toBe(false);
     expect(result.verified).toBe(true);
+    expect(result.reviewItems).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "policy-owner-review",
+        status: "action_required",
+      }),
+      expect.objectContaining({
+        id: "protected-rollout-pr",
+        status: "action_required",
+        recommendation: expect.stringContaining("Open a protected PR"),
+      }),
+    ]));
     expect(existsSync(activePolicyPath)).toBe(false);
   });
 
@@ -118,6 +145,16 @@ describe("policy pack promotion", () => {
       promoted: true,
       verified: true,
     });
+    expect(promotion.reviewItems).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "protected-rollout-pr",
+        status: "verified",
+      }),
+      expect.objectContaining({
+        id: "runtime-smoke-test",
+        status: "action_required",
+      }),
+    ]));
     expect(existsSync(activePolicyPath)).toBe(true);
   });
 });
