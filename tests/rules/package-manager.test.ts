@@ -33,7 +33,6 @@ describe("packageManagerRules", () => {
       [
         "//registry.npmjs.org/:_authToken=${NPM_TOKEN}",
         "ignore-scripts=true",
-        "min-release-age=1d",
       ].join("\n"),
     );
 
@@ -42,23 +41,27 @@ describe("packageManagerRules", () => {
     expect(findings.some((finding) => finding.id.includes("registry-credential"))).toBe(false);
   });
 
-  it("flags npm configs that leave lifecycle scripts enabled and age gates weak", () => {
-    const file = makePackageManagerConfig(
-      ".npmrc",
-      ["ignore-scripts=false", "min-release-age=12h"].join("\n"),
-    );
+  it("flags npm configs that leave lifecycle scripts enabled", () => {
+    const file = makePackageManagerConfig(".npmrc", "ignore-scripts=false");
 
     const findings = runPackageManagerRules(file);
 
     expect(
       findings.some((finding) => finding.id === "package-manager-lifecycle-scripts-enabled")
     ).toBe(true);
+  });
+
+  it("flags unsupported npm release-age keys", () => {
+    const file = makePackageManagerConfig(".npmrc", "min-release-age=1d");
+
+    const findings = runPackageManagerRules(file);
+
     expect(
-      findings.some((finding) => finding.id === "package-manager-release-age-gate-too-low")
+      findings.some((finding) => finding.id === "package-manager-npm-release-age-gate-unsupported")
     ).toBe(true);
   });
 
-  it("flags npm configs that omit ignore-scripts and release-age gates", () => {
+  it("flags npm configs that omit ignore-scripts", () => {
     const file = makePackageManagerConfig(".npmrc", "registry=https://registry.npmjs.org/");
 
     const findings = runPackageManagerRules(file);
@@ -66,8 +69,21 @@ describe("packageManagerRules", () => {
     expect(
       findings.some((finding) => finding.id === "package-manager-lifecycle-scripts-not-disabled")
     ).toBe(true);
+  });
+
+  it("flags pnpm line configs that omit or weaken release-age gates", () => {
+    const missing = makePackageManagerConfig(".pnpmrc", "ignore-scripts=true");
+    const weak = makePackageManagerConfig(".pnpmrc", "minimum-release-age=60");
+
     expect(
-      findings.some((finding) => finding.id === "package-manager-release-age-gate-missing")
+      runPackageManagerRules(missing).some(
+        (finding) => finding.id === "package-manager-pnpm-release-age-gate-missing"
+      )
+    ).toBe(true);
+    expect(
+      runPackageManagerRules(weak).some(
+        (finding) => finding.id === "package-manager-pnpm-release-age-gate-too-low"
+      )
     ).toBe(true);
   });
 

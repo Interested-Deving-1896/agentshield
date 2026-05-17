@@ -168,7 +168,11 @@ scripts, deprecation, and package age.
 
 Package-manager hardening checks also scan `.npmrc`, `.yarnrc.yml`, and
 `pnpm-workspace.yaml` for plaintext registry credentials, explicit dependency
-lifecycle-script enablement, and missing or weak release-age cooldowns.
+lifecycle-script enablement, and missing or weak release-age cooldowns where the
+package manager supports them. npm configs are checked for lifecycle-script
+blocking and unsupported release-age keys that can create false confidence; use
+pnpm `minimumReleaseAge` / `minimum-release-age`, Yarn `npmMinimalAgeGate`, or an
+external package-manager policy wrapper for cooldown enforcement.
 
 #### MCP Confidence Notes
 

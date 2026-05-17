@@ -23,6 +23,15 @@ function isNpmStyleConfig(file: ConfigFile): boolean {
   return normalized.endsWith(".npmrc") || normalized.endsWith(".pnpmrc");
 }
 
+function isNpmConfig(file: ConfigFile): boolean {
+  return normalizePath(file.path).endsWith(".npmrc");
+}
+
+function isPnpmLineConfig(file: ConfigFile): boolean {
+  const normalized = normalizePath(file.path);
+  return normalized.endsWith(".pnpmrc") || normalized.endsWith("/pnpm/rc");
+}
+
 function isYarnConfig(file: ConfigFile): boolean {
   const normalized = normalizePath(file.path);
   return normalized.endsWith(".yarnrc.yml") || normalized.endsWith(".yarnrc");
@@ -379,39 +388,62 @@ function lifecycleScriptFindings(file: ConfigFile): ReadonlyArray<Finding> {
 function releaseAgeFindings(file: ConfigFile): ReadonlyArray<Finding> {
   const findings: Finding[] = [];
 
-  if (isNpmStyleConfig(file)) {
+  if (isNpmConfig(file)) {
     const entries = parseLineConfig(file.content);
     const releaseAge = findEntry(entries, "min-release-age") ?? findEntry(entries, "minimum-release-age");
-    const releaseAgeValue = releaseAge ? parseDurationToMinutes(releaseAge.value) : undefined;
+
+    if (releaseAge) {
+      findings.push(
+        makeFinding({
+          id: "package-manager-npm-release-age-gate-unsupported",
+          severity: "medium",
+          category: "misconfiguration",
+          title: "npm release-age gate key is unsupported",
+          description:
+            "The npm CLI does not recognize a native dynamic release-age gate. This key can create false confidence; enforce package cooldowns through pnpm `minimumReleaseAge`, Yarn `npmMinimalAgeGate`, or a package-manager policy wrapper.",
+          file: file.path,
+          line: releaseAge.line,
+          evidence: `${releaseAge.key}=${releaseAge.value}`,
+          before: `${releaseAge.key}=${releaseAge.value}`,
+          after: "# use pnpm minimumReleaseAge or Yarn npmMinimalAgeGate",
+        })
+      );
+    }
+  }
+
+  if (isPnpmLineConfig(file)) {
+    const entries = parseLineConfig(file.content);
+    const releaseAge = findEntry(entries, "minimum-release-age");
+    const releaseAgeValue = releaseAge ? parseNumber(releaseAge.value) : undefined;
 
     if (!releaseAge) {
       findings.push(
         makeFinding({
-          id: "package-manager-release-age-gate-missing",
+          id: "package-manager-pnpm-release-age-gate-missing",
           severity: "info",
           category: "misconfiguration",
-          title: "Package release-age gate is not configured",
+          title: "pnpm release-age gate is not configured",
           description:
-            "No release-age gate is configured. A cooldown before newly published packages can install reduces exposure to fast-moving npm supply-chain campaigns.",
+            "pnpm can block package versions that are too new through `minimumReleaseAge` / `minimum-release-age`. Configure a cooldown to reduce exposure to fast-moving supply-chain campaigns.",
           file: file.path,
-          before: "# missing release-age gate",
-          after: "min-release-age=1d",
+          before: "# missing minimum-release-age",
+          after: "minimum-release-age=1440",
         })
       );
     } else if (releaseAgeValue !== undefined && releaseAgeValue < RELEASE_AGE_MINUTES) {
       findings.push(
         makeFinding({
-          id: "package-manager-release-age-gate-too-low",
+          id: "package-manager-pnpm-release-age-gate-too-low",
           severity: "medium",
           category: "misconfiguration",
-          title: "Package release-age gate is below one day",
+          title: "pnpm release-age gate is below one day",
           description:
-            "The configured release-age gate is below one day. High-risk developer environments should delay newly published package versions long enough for ecosystem detection and takedowns to catch up.",
+            "`minimum-release-age` is below one day. Use a longer cooldown for workstations and CI runners that handle tokens or publish packages.",
           file: file.path,
           line: releaseAge.line,
           evidence: `${releaseAge.key}=${releaseAge.value}`,
           before: `${releaseAge.key}=${releaseAge.value}`,
-          after: `${releaseAge.key}=1d`,
+          after: `${releaseAge.key}=1440`,
         })
       );
     }

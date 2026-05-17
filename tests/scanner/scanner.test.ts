@@ -62,15 +62,17 @@ describe("scanner", () => {
         [
           "//registry.npmjs.org/:_authToken=npm_123456789012345678901234567890123456",
           "ignore-scripts=false",
-          "min-release-age=12h",
+          "min-release-age=1d",
         ].join("\n"),
       );
+      writeFileSync(join(tempDir, ".pnpmrc"), "minimum-release-age=60");
 
       const result = scan(tempDir);
 
       expect(result.findings.some((f) => f.id.includes("package-manager-registry-credential"))).toBe(true);
       expect(result.findings.some((f) => f.id === "package-manager-lifecycle-scripts-enabled")).toBe(true);
-      expect(result.findings.some((f) => f.id === "package-manager-release-age-gate-too-low")).toBe(true);
+      expect(result.findings.some((f) => f.id === "package-manager-npm-release-age-gate-unsupported")).toBe(true);
+      expect(result.findings.some((f) => f.id === "package-manager-pnpm-release-age-gate-too-low")).toBe(true);
     });
 
     it("detects risky MCP servers", () => {
