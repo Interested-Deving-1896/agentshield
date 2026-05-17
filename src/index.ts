@@ -757,6 +757,10 @@ evidencePack
       writeStdout(`Status:      ${result.ok ? "verified" : "invalid evidence"}`);
       writeStdout(`Attention:   ${result.requiresAttention ? "required" : "none"}`);
       writeStdout(
+        `Readback:    ${result.operatorReadback.status}; digest ${result.operatorReadback.digest}; owners ${result.operatorReadback.ownerCount}; review items ${result.operatorReadback.reviewItemCount}`
+      );
+      writeStdout(`Next:        ${result.operatorReadback.nextAction}`);
+      writeStdout(
         `Findings:    critical ${result.summary.critical}, high ${result.summary.high}, medium ${result.summary.medium}, low ${result.summary.low}, info ${result.summary.info}`
       );
       writeStdout(

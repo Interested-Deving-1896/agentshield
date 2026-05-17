@@ -16128,15 +16128,75 @@ function inspectEvidencePackFleet(outputDirs) {
     (entry) => entry.errors.map((error) => `${entry.outputDir}: ${error}`)
   );
   const reviewItems = entries.filter((entry) => entry.route !== "ready").map(buildFleetReviewItem);
+  const operatorReadback = buildFleetOperatorReadback(summary, routes, reviewItems);
   return {
     ok: summary.invalidPacks === 0,
     requiresAttention: routes.some((route) => route.route !== "ready"),
     summary,
+    operatorReadback,
     entries,
     routes,
     reviewItems,
     errors
   };
+}
+function buildFleetOperatorReadback(summary, routes, reviewItems) {
+  const status = determineFleetOperatorStatus(summary, reviewItems);
+  const owners = Array.from(new Set(reviewItems.map((item) => item.owner))).sort();
+  const routesRequiringApproval = Array.from(new Set(reviewItems.map((item) => item.route))).sort();
+  return {
+    status,
+    ready: status === "ready",
+    requiresApproval: reviewItems.length > 0,
+    digest: buildFleetOperatorDigest(summary, routes, reviewItems),
+    invalidPackCount: summary.invalidPacks,
+    reviewItemCount: reviewItems.length,
+    blockingItemCount: reviewItems.filter((item) => item.severity === "high").length,
+    ownerCount: owners.length,
+    owners,
+    routesRequiringApproval,
+    nextAction: describeFleetOperatorNextAction(status)
+  };
+}
+function determineFleetOperatorStatus(summary, reviewItems) {
+  if (summary.invalidPacks > 0) return "invalid-evidence";
+  return reviewItems.length > 0 ? "blocked" : "ready";
+}
+function describeFleetOperatorNextAction(status) {
+  if (status === "invalid-evidence") return "Regenerate invalid evidence packs before promotion.";
+  if (status === "blocked") return "Route review items to listed owners and attach approval before promotion.";
+  return "Promotion can proceed with the current evidence digest.";
+}
+function buildFleetOperatorDigest(summary, routes, reviewItems) {
+  const payload = {
+    summary,
+    routes: [...routes].map((route) => ({
+      route: route.route,
+      outputDir: route.outputDir,
+      repository: route.repository,
+      targetPath: route.targetPath,
+      reason: route.reason
+    })).sort(compareDigestRecords),
+    reviewItems: [...reviewItems].map((item) => ({
+      route: item.route,
+      severity: item.severity,
+      outputDir: item.outputDir,
+      owner: item.owner,
+      repository: item.repository,
+      targetPath: item.targetPath,
+      reason: item.reason,
+      evidencePaths: [...item.evidencePaths].sort(),
+      beforeState: item.beforeState,
+      afterState: item.afterState,
+      reversibleAction: item.reversibleAction,
+      actions: [...item.actions],
+      recommendation: item.recommendation
+    })).sort(compareDigestRecords)
+  };
+  return `sha256:${createHash2("sha256").update(JSON.stringify(payload)).digest("hex")}`;
+}
+function compareDigestRecords(left, right) {
+  return JSON.stringify(left).localeCompare(JSON.stringify(right));
 }
 function buildFleetReviewItem(entry) {
   return {
@@ -19515,6 +19575,10 @@ evidencePack.command("fleet").description("Inspect multiple evidence packs and s
     );
     writeStdout(`Status:      ${result.ok ? "verified" : "invalid evidence"}`);
     writeStdout(`Attention:   ${result.requiresAttention ? "required" : "none"}`);
+    writeStdout(
+      `Readback:    ${result.operatorReadback.status}; digest ${result.operatorReadback.digest}; owners ${result.operatorReadback.ownerCount}; review items ${result.operatorReadback.reviewItemCount}`
+    );
+    writeStdout(`Next:        ${result.operatorReadback.nextAction}`);
     writeStdout(
       `Findings:    critical ${result.summary.critical}, high ${result.summary.high}, medium ${result.summary.medium}, low ${result.summary.low}, info ${result.summary.info}`
     );

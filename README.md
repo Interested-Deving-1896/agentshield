@@ -442,13 +442,19 @@ agentshield evidence-pack inspect ./agentshield-evidence --json
 
 Aggregate multiple verified evidence packs when an operator needs fleet-level
 routing across repos, teams, or harnesses. The JSON output includes
-`reviewItems` with source evidence paths and owner-ready recommendations for
-packs that need follow-up:
+`operatorReadback` for promotion status/digest checks and `reviewItems` with
+source evidence paths and owner-ready recommendations for packs that need
+follow-up:
 
 ```bash
 agentshield evidence-pack fleet ./repo-a-evidence ./repo-b-evidence
 agentshield evidence-pack fleet ./repo-a-evidence ./repo-b-evidence --json
 ```
+
+`operatorReadback` is the stable field for downstream GitHub App, Linear, or
+ECC Tools routing. It reports `ready`, `status`, `digest`, owner counts,
+blocking review counts, approval routes, and the next operator action so fleet
+promotion can be gated without parsing terminal prose.
 
 ### JSON Report Shape
 

@@ -737,6 +737,19 @@ describe("writeEvidencePack", () => {
       autoFixable: 0,
       manualReview: 1,
     });
+    expect(fleet.operatorReadback).toMatchObject({
+      status: "blocked",
+      ready: false,
+      requiresApproval: true,
+      invalidPackCount: 0,
+      reviewItemCount: 1,
+      blockingItemCount: 1,
+      ownerCount: 1,
+      owners: ["affaan-m/risky-repo security owner"],
+      routesRequiringApproval: ["security-blocker"],
+      nextAction: "Route review items to listed owners and attach approval before promotion.",
+    });
+    expect(fleet.operatorReadback.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(fleet.entries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -813,6 +826,14 @@ describe("writeEvidencePack", () => {
       verifiedPacks: 0,
       invalidPacks: 1,
     });
+    expect(fleet.operatorReadback).toMatchObject({
+      status: "invalid-evidence",
+      ready: false,
+      invalidPackCount: 1,
+      reviewItemCount: 1,
+      blockingItemCount: 1,
+      nextAction: "Regenerate invalid evidence packs before promotion.",
+    });
     expect(fleet.entries[0]).toMatchObject({
       outputDir,
       ok: false,
@@ -860,6 +881,9 @@ describe("writeEvidencePack", () => {
     expect(text.status).toBe(0);
     expect(text.stdout).toContain("AgentShield Evidence Pack Fleet");
     expect(text.stdout).toContain("Packs:       2 total, 2 verified, 0 invalid");
+    expect(text.stdout).toContain("Readback:    blocked; digest sha256:");
+    expect(text.stdout).toContain("owners 1; review items 1");
+    expect(text.stdout).toContain("Next:        Route review items to listed owners and attach approval before promotion.");
     expect(text.stdout).toContain("Findings:    critical 1, high 0, medium 0, low 0, info 0");
     expect(text.stdout).toContain("security-blocker affaan-m/risky-repo");
     expect(text.stdout).toContain("ready affaan-m/clean-repo");
@@ -898,6 +922,18 @@ describe("writeEvidencePack", () => {
         policyFailures: 1,
         baselineRegressions: 1,
       },
+      operatorReadback: {
+        status: "blocked",
+        ready: false,
+        requiresApproval: true,
+        invalidPackCount: 0,
+        reviewItemCount: 1,
+        blockingItemCount: 1,
+        ownerCount: 1,
+        owners: ["affaan-m/risky-repo security owner"],
+        routesRequiringApproval: ["security-blocker"],
+        nextAction: "Route review items to listed owners and attach approval before promotion.",
+      },
       reviewItems: [
         {
           route: "security-blocker",
@@ -916,5 +952,6 @@ describe("writeEvidencePack", () => {
         },
       ],
     });
+    expect(JSON.parse(json.stdout).operatorReadback.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 });

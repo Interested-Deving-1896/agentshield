@@ -80,10 +80,25 @@ export interface EvidencePackFleetInspectionResult {
   readonly ok: boolean;
   readonly requiresAttention: boolean;
   readonly summary: EvidencePackFleetSummary;
+  readonly operatorReadback: EvidencePackFleetOperatorReadback;
   readonly entries: ReadonlyArray<EvidencePackFleetEntry>;
   readonly routes: ReadonlyArray<EvidencePackFleetRouteEntry>;
   readonly reviewItems: ReadonlyArray<EvidencePackFleetReviewItem>;
   readonly errors: ReadonlyArray<string>;
+}
+
+export interface EvidencePackFleetOperatorReadback {
+  readonly status: "ready" | "blocked" | "invalid-evidence";
+  readonly ready: boolean;
+  readonly requiresApproval: boolean;
+  readonly digest: string;
+  readonly invalidPackCount: number;
+  readonly reviewItemCount: number;
+  readonly blockingItemCount: number;
+  readonly ownerCount: number;
+  readonly owners: ReadonlyArray<string>;
+  readonly routesRequiringApproval: ReadonlyArray<EvidencePackFleetRoute>;
+  readonly nextAction: string;
 }
 
 export interface EvidencePackFleetSummary {
@@ -578,16 +593,96 @@ export function inspectEvidencePackFleet(outputDirs: ReadonlyArray<string>): Evi
   const reviewItems = entries
     .filter((entry) => entry.route !== "ready")
     .map(buildFleetReviewItem);
+  const operatorReadback = buildFleetOperatorReadback(summary, routes, reviewItems);
 
   return {
     ok: summary.invalidPacks === 0,
     requiresAttention: routes.some((route) => route.route !== "ready"),
     summary,
+    operatorReadback,
     entries,
     routes,
     reviewItems,
     errors,
   };
+}
+
+function buildFleetOperatorReadback(
+  summary: EvidencePackFleetSummary,
+  routes: ReadonlyArray<EvidencePackFleetRouteEntry>,
+  reviewItems: ReadonlyArray<EvidencePackFleetReviewItem>
+): EvidencePackFleetOperatorReadback {
+  const status = determineFleetOperatorStatus(summary, reviewItems);
+  const owners = Array.from(new Set(reviewItems.map((item) => item.owner))).sort();
+  const routesRequiringApproval = Array.from(new Set(reviewItems.map((item) => item.route))).sort();
+  return {
+    status,
+    ready: status === "ready",
+    requiresApproval: reviewItems.length > 0,
+    digest: buildFleetOperatorDigest(summary, routes, reviewItems),
+    invalidPackCount: summary.invalidPacks,
+    reviewItemCount: reviewItems.length,
+    blockingItemCount: reviewItems.filter((item) => item.severity === "high").length,
+    ownerCount: owners.length,
+    owners,
+    routesRequiringApproval,
+    nextAction: describeFleetOperatorNextAction(status),
+  };
+}
+
+function determineFleetOperatorStatus(
+  summary: EvidencePackFleetSummary,
+  reviewItems: ReadonlyArray<EvidencePackFleetReviewItem>
+): EvidencePackFleetOperatorReadback["status"] {
+  if (summary.invalidPacks > 0) return "invalid-evidence";
+  return reviewItems.length > 0 ? "blocked" : "ready";
+}
+
+function describeFleetOperatorNextAction(status: EvidencePackFleetOperatorReadback["status"]): string {
+  if (status === "invalid-evidence") return "Regenerate invalid evidence packs before promotion.";
+  if (status === "blocked") return "Route review items to listed owners and attach approval before promotion.";
+  return "Promotion can proceed with the current evidence digest.";
+}
+
+function buildFleetOperatorDigest(
+  summary: EvidencePackFleetSummary,
+  routes: ReadonlyArray<EvidencePackFleetRouteEntry>,
+  reviewItems: ReadonlyArray<EvidencePackFleetReviewItem>
+): string {
+  const payload = {
+    summary,
+    routes: [...routes]
+      .map((route) => ({
+        route: route.route,
+        outputDir: route.outputDir,
+        repository: route.repository,
+        targetPath: route.targetPath,
+        reason: route.reason,
+      }))
+      .sort(compareDigestRecords),
+    reviewItems: [...reviewItems]
+      .map((item) => ({
+        route: item.route,
+        severity: item.severity,
+        outputDir: item.outputDir,
+        owner: item.owner,
+        repository: item.repository,
+        targetPath: item.targetPath,
+        reason: item.reason,
+        evidencePaths: [...item.evidencePaths].sort(),
+        beforeState: item.beforeState,
+        afterState: item.afterState,
+        reversibleAction: item.reversibleAction,
+        actions: [...item.actions],
+        recommendation: item.recommendation,
+      }))
+      .sort(compareDigestRecords),
+  };
+  return `sha256:${createHash("sha256").update(JSON.stringify(payload)).digest("hex")}`;
+}
+
+function compareDigestRecords(left: Record<string, unknown>, right: Record<string, unknown>): number {
+  return JSON.stringify(left).localeCompare(JSON.stringify(right));
 }
 
 function buildFleetReviewItem(entry: EvidencePackFleetEntry): EvidencePackFleetReviewItem {

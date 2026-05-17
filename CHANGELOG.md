@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added evidence-pack fleet `operatorReadback` output with promotion status,
+  deterministic review digest, owner counts, approval routes, and next-action
+  guidance for GitHub App, Linear, and ECC Tools routing.
 - Added `agentshield policy promote` to verify exported policy-pack manifests,
   reject tampered policy JSON by SHA-256 digest, and promote a selected pack
   into the active policy path with dry-run and JSON review modes.
