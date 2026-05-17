@@ -29,6 +29,10 @@ import {
   shouldFailForSupplyChain,
   statusForSupplyChainReport,
 } from "./action-supply-chain.js";
+import {
+  renderPackageManagerHardeningJobSummary,
+  summarizePackageManagerHardening,
+} from "./action-hardening.js";
 import type { PolicyEvaluation } from "./policy/index.js";
 import type { BaselineComparison } from "./baseline/index.js";
 import type { SupplyChainReport } from "./supply-chain/index.js";
@@ -173,6 +177,7 @@ async function run(): Promise<void> {
 
   // Calculate score
   const report = calculateScore(filteredResult);
+  const packageManagerHardening = summarizePackageManagerHardening(result.findings);
 
   // Emit GitHub annotations for each finding
   emitAnnotations(filteredResult.findings);
@@ -193,6 +198,31 @@ async function run(): Promise<void> {
   setOutput("supply-chain-risky-packages", "0");
   setOutput("supply-chain-critical-count", "0");
   setOutput("supply-chain-high-count", "0");
+  setOutput("package-manager-hardening-status", packageManagerHardening.status);
+  setOutput(
+    "package-manager-hardening-findings",
+    String(packageManagerHardening.totalFindings)
+  );
+  setOutput(
+    "package-manager-hardening-critical-count",
+    String(packageManagerHardening.criticalCount)
+  );
+  setOutput(
+    "package-manager-hardening-high-count",
+    String(packageManagerHardening.highCount)
+  );
+  setOutput(
+    "package-manager-hardening-registry-credentials",
+    String(packageManagerHardening.registryCredentialCount)
+  );
+  setOutput(
+    "package-manager-hardening-lifecycle-scripts",
+    String(packageManagerHardening.lifecycleScriptCount)
+  );
+  setOutput(
+    "package-manager-hardening-release-age-gates",
+    String(packageManagerHardening.releaseAgeGateCount)
+  );
   setOutput("evidence-pack-status", "not-run");
   setOutput("evidence-pack-digest", "");
 
@@ -271,6 +301,7 @@ async function run(): Promise<void> {
   // Write job summary as markdown
   const markdownSummary = renderMarkdownReport(report);
   writeJobSummary(markdownSummary);
+  writeJobSummary(renderPackageManagerHardeningJobSummary(packageManagerHardening));
 
   // Console output for the log
   console.log(`Score: ${report.score.numericScore}/100 (Grade: ${report.score.grade})`);

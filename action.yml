@@ -99,6 +99,20 @@ outputs:
     description: "Number of MCP packages with critical supply-chain risk"
   supply-chain-high-count:
     description: "Number of MCP packages with high supply-chain risk"
+  package-manager-hardening-status:
+    description: "Package-manager hardening status: hardened or needs-review"
+  package-manager-hardening-findings:
+    description: "Number of package-manager hardening findings"
+  package-manager-hardening-critical-count:
+    description: "Number of critical package-manager hardening findings"
+  package-manager-hardening-high-count:
+    description: "Number of high package-manager hardening findings"
+  package-manager-hardening-registry-credentials:
+    description: "Number of package-manager registry credential findings"
+  package-manager-hardening-lifecycle-scripts:
+    description: "Number of package-manager lifecycle-script findings"
+  package-manager-hardening-release-age-gates:
+    description: "Number of package-manager release-age gate findings"
   evidence-pack-path:
     description: "Path to the generated evidence-pack directory"
   evidence-pack-status:

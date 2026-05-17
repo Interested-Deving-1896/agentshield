@@ -81,6 +81,18 @@ describe("action helpers (logic verification)", () => {
     expect(actionYaml).toContain("supply-chain-high-count:");
   });
 
+  it("documents package-manager hardening outputs in action.yml", () => {
+    const actionYaml = readFileSync(resolve(process.cwd(), "action.yml"), "utf-8");
+
+    expect(actionYaml).toContain("package-manager-hardening-status:");
+    expect(actionYaml).toContain("package-manager-hardening-findings:");
+    expect(actionYaml).toContain("package-manager-hardening-critical-count:");
+    expect(actionYaml).toContain("package-manager-hardening-high-count:");
+    expect(actionYaml).toContain("package-manager-hardening-registry-credentials:");
+    expect(actionYaml).toContain("package-manager-hardening-lifecycle-scripts:");
+    expect(actionYaml).toContain("package-manager-hardening-release-age-gates:");
+  });
+
   it("writes and verifies an evidence pack when requested", () => {
     const workspace = mkdtempSync(join(tmpdir(), "agentshield-action-workspace-"));
     const outputFile = join(workspace, "github-output.txt");
@@ -116,6 +128,48 @@ describe("action helpers (logic verification)", () => {
     expect(outputs).toContain("evidence-pack-status=passed");
     expect(outputs).toMatch(/evidence-pack-digest=sha256:[a-f0-9]{64}/);
     expect(outputs).toContain("supply-chain-status=clean");
+    expect(outputs).toContain("package-manager-hardening-status=hardened");
+  });
+
+  it("emits package-manager hardening outputs and job summary evidence", () => {
+    const workspace = mkdtempSync(join(tmpdir(), "agentshield-action-hardening-"));
+    const outputFile = join(workspace, "github-output.txt");
+    const summaryFile = join(workspace, "github-summary.md");
+
+    writeFileSync(join(workspace, ".npmrc"), [
+      "ignore-scripts=false",
+      "minimum-release-age=60",
+      "",
+    ].join("\n"));
+
+    const result = spawnSync(process.execPath, [ACTION_PATH], {
+      cwd: workspace,
+      env: {
+        ...process.env,
+        GITHUB_WORKSPACE: workspace,
+        GITHUB_OUTPUT: outputFile,
+        GITHUB_STEP_SUMMARY: summaryFile,
+        INPUT_PATH: ".",
+        "INPUT_FAIL-ON-FINDINGS": "false",
+      },
+      encoding: "utf-8",
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+
+    const outputs = readFileSync(outputFile, "utf-8");
+    expect(outputs).toContain("package-manager-hardening-status=needs-review");
+    expect(outputs).toContain("package-manager-hardening-findings=2");
+    expect(outputs).toContain("package-manager-hardening-high-count=1");
+    expect(outputs).toContain("package-manager-hardening-lifecycle-scripts=1");
+    expect(outputs).toContain("package-manager-hardening-release-age-gates=1");
+
+    const summary = readFileSync(summaryFile, "utf-8");
+    expect(summary).toContain("## AgentShield Package Manager Hardening");
+    expect(summary).toContain("- Status: needs-review");
+    expect(summary).toContain("package-manager-lifecycle-scripts-enabled");
+    expect(summary).toContain("package-manager-npm-release-age-gate-unsupported");
   });
 
   it("fails by default when MCP supply-chain verification finds a compromised package", () => {

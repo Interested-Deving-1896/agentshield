@@ -13120,6 +13120,69 @@ function renderSupplyChainJobSummary(report, options) {
 `;
 }
 
+// src/action-hardening.ts
+function isPackageManagerHardeningFinding(finding) {
+  return finding.id.startsWith("package-manager-");
+}
+function countSeverity(findings, severity) {
+  return findings.filter((finding) => finding.severity === severity).length;
+}
+function countByIdFragment(findings, fragments) {
+  return findings.filter(
+    (finding) => fragments.some((fragment) => finding.id.includes(fragment))
+  ).length;
+}
+function summarizePackageManagerHardening(findings) {
+  const hardeningFindings = findings.filter(isPackageManagerHardeningFinding);
+  return {
+    status: hardeningFindings.length > 0 ? "needs-review" : "hardened",
+    findings: hardeningFindings,
+    totalFindings: hardeningFindings.length,
+    criticalCount: countSeverity(hardeningFindings, "critical"),
+    highCount: countSeverity(hardeningFindings, "high"),
+    registryCredentialCount: countByIdFragment(hardeningFindings, [
+      "registry-credential"
+    ]),
+    lifecycleScriptCount: countByIdFragment(hardeningFindings, [
+      "lifecycle-scripts",
+      "dangerously-allow-all-builds",
+      "strict-dep-builds"
+    ]),
+    releaseAgeGateCount: countByIdFragment(hardeningFindings, [
+      "release-age-gate"
+    ])
+  };
+}
+function renderPackageManagerHardeningJobSummary(summary) {
+  const lines = [
+    "",
+    "",
+    "## AgentShield Package Manager Hardening",
+    "",
+    `- Status: ${summary.status}`,
+    `- Findings: ${summary.totalFindings}`,
+    `- Critical findings: ${summary.criticalCount}`,
+    `- High findings: ${summary.highCount}`,
+    `- Registry credential findings: ${summary.registryCredentialCount}`,
+    `- Lifecycle script findings: ${summary.lifecycleScriptCount}`,
+    `- Release-age gate findings: ${summary.releaseAgeGateCount}`
+  ];
+  if (summary.findings.length > 0) {
+    lines.push("", "### Findings", "");
+    for (const finding of summary.findings.slice(0, 20)) {
+      const location = finding.line ? `${finding.file}:${finding.line}` : finding.file;
+      lines.push(
+        `- ${finding.id} (${finding.severity}) ${location}: ${finding.title}`
+      );
+    }
+    if (summary.findings.length > 20) {
+      lines.push(`- ${summary.findings.length - 20} additional finding(s) omitted`);
+    }
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
 // src/action.ts
 function getInput(name, fallback) {
   const envKey = `INPUT_${name.replace(/ /g, "_").toUpperCase()}`;
@@ -13224,6 +13287,7 @@ async function run() {
     findings: result.findings.filter((f) => isAtOrAboveSeverity(f, minSeverity))
   };
   const report = calculateScore(filteredResult);
+  const packageManagerHardening = summarizePackageManagerHardening(result.findings);
   emitAnnotations(filteredResult.findings);
   setOutput("score", String(report.score.numericScore));
   setOutput("grade", report.score.grade);
@@ -13240,6 +13304,31 @@ async function run() {
   setOutput("supply-chain-risky-packages", "0");
   setOutput("supply-chain-critical-count", "0");
   setOutput("supply-chain-high-count", "0");
+  setOutput("package-manager-hardening-status", packageManagerHardening.status);
+  setOutput(
+    "package-manager-hardening-findings",
+    String(packageManagerHardening.totalFindings)
+  );
+  setOutput(
+    "package-manager-hardening-critical-count",
+    String(packageManagerHardening.criticalCount)
+  );
+  setOutput(
+    "package-manager-hardening-high-count",
+    String(packageManagerHardening.highCount)
+  );
+  setOutput(
+    "package-manager-hardening-registry-credentials",
+    String(packageManagerHardening.registryCredentialCount)
+  );
+  setOutput(
+    "package-manager-hardening-lifecycle-scripts",
+    String(packageManagerHardening.lifecycleScriptCount)
+  );
+  setOutput(
+    "package-manager-hardening-release-age-gates",
+    String(packageManagerHardening.releaseAgeGateCount)
+  );
   setOutput("evidence-pack-status", "not-run");
   setOutput("evidence-pack-digest", "");
   let policyEvaluation = null;
@@ -13309,6 +13398,7 @@ async function run() {
   }
   const markdownSummary = renderMarkdownReport(report);
   writeJobSummary(markdownSummary);
+  writeJobSummary(renderPackageManagerHardeningJobSummary(packageManagerHardening));
   console.log(`Score: ${report.score.numericScore}/100 (Grade: ${report.score.grade})`);
   console.log(`Findings: ${report.summary.totalFindings} total`);
   console.log(`  Critical: ${report.summary.critical}`);

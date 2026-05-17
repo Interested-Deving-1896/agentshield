@@ -7,6 +7,9 @@ All notable changes to this project will be documented in this file.
 - Added `agentshield policy promote` to verify exported policy-pack manifests,
   reject tampered policy JSON by SHA-256 digest, and promote a selected pack
   into the active policy path with dry-run and JSON review modes.
+- Added GitHub Action package-manager hardening outputs and job-summary
+  evidence for registry credentials, lifecycle-script drift, and release-age
+  gate drift.
 
 ## [1.4.0] - 2026-03-20
 
