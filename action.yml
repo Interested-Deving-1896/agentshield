@@ -151,5 +151,5 @@ outputs:
     description: "Verified digest for the promoted policy pack"
 
 runs:
-  using: "node20"
+  using: "node24"
   main: "dist/action.js"

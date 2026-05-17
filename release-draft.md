@@ -7,6 +7,8 @@ Linear, and ECC Tools flows can consume directly.
 
 ## Highlights
 
+- Updated the GitHub Action metadata to use GitHub's Node.js 24 JavaScript
+  action runtime ahead of the Node.js 20 runner deprecation window.
 - Added evidence-pack fleet `operatorReadback` output with ready/blocked status,
   deterministic review digest, owner counts, approval routes, blocking counts,
   and next-action guidance for promotion gates.

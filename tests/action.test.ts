@@ -36,6 +36,13 @@ function isAtOrAboveSeverity(severity: string, minSeverity: string): boolean {
 }
 
 describe("action helpers (logic verification)", () => {
+  it("uses the current GitHub JavaScript action runtime", () => {
+    const actionYaml = readFileSync(resolve(process.cwd(), "action.yml"), "utf-8");
+
+    expect(actionYaml).toContain('using: "node24"');
+    expect(actionYaml).not.toContain('using: "node20"');
+  });
+
   it("documents organization policy inputs and outputs in action.yml", () => {
     const actionYaml = readFileSync(resolve(process.cwd(), "action.yml"), "utf-8");
 

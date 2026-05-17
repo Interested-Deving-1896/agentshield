@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Updated the GitHub Action metadata to run on the Node.js 24 JavaScript action
+  runtime before GitHub removes Node.js 20 support from hosted runners.
 - Added evidence-pack fleet `operatorReadback` output with promotion status,
   deterministic review digest, owner counts, approval routes, and next-action
   guidance for GitHub App, Linear, and ECC Tools routing.
