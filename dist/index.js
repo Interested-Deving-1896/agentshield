@@ -2244,8 +2244,13 @@ var init_hooks = __esm({
       },
       {
         name: "tanstack-exfil-network",
-        pattern: /\b(?:api\.masscan\.cloud|filev2\.getsession\.org|git-tanstack\.com|seed[123]\.getsession\.org|83\.142\.209\.194|litter\.catbox\.moe\/(?:h8nc9u\.js|7rrc6l\.mjs))\b/gi,
+        pattern: /\b(?:api\.masscan\.cloud|filev2\.getsession\.org|git-tanstack\.com|seed[123]\.getsession\.org|83\.142\.209\.194|169\.254\.169\.254|169\.254\.170\.2|127\.0\.0\.1:8200|litter\.catbox\.moe\/(?:h8nc9u\.js|7rrc6l\.mjs))\b/gi,
         description: "Matches exfiltration or second-stage URLs reported for the May 2026 TanStack/Mini Shai-Hulud campaign."
+      },
+      {
+        name: "mini-shai-hulud-payload-hash",
+        pattern: /(?:ab4fcadaec49c03278063dd269ea5eef82d24f2124a8e15d7b90f2fa8601266c|2ec78d556d696e208927cc503d48e4b5eb56b31abc2870c2ed2e98d6be27fc96|7c12d8619f2db233e3d965a9307093355f149d5babc458912757a5e88fec0f54|0c0e8730695e997b3a53d77483f28573392319ec023f8fd6d7282121cf7cf192)/gi,
+        description: "Matches payload, package, and encryption-key hashes reported for the May 2026 Mini Shai-Hulud campaign."
       },
       {
         name: "ai-tool-persistence-payload",
@@ -2259,7 +2264,7 @@ var init_hooks = __esm({
       },
       {
         name: "mini-shai-hulud-campaign-marker",
-        pattern: /(?:Shai-Hulud:\s*Here We Go Again|A Mini Shai-Hulud has Appeared|IfYouRevokeThisTokenItWillWipeTheComputerOfTheOwner|PUSH UR T3MPRR)/gi,
+        pattern: /(?:Shai-Hulud:\s*Here We Go Again|A Mini Shai-Hulud has Appeared|IfYouRevokeThisTokenItWillWipeTheComputerOfTheOwner|PUSH UR T3MPRR|svksjrhjkcejg|dependabot\/github_actions\/format\/|claude@users\.noreply\.github\.com)/gi,
         description: "Matches repository descriptions or commit messages reported in Mini Shai-Hulud propagation and token-wiper flows."
       },
       {

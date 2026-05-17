@@ -87,6 +87,30 @@ describe("hookRules", () => {
       expect(findings.some((f) => f.evidence === "MISTRAL_INIT")).toBe(true);
     });
 
+    it("flags cloud credential targets and branch markers from Mini Shai-Hulud propagation", () => {
+      const file = makeHookScript([
+        "curl http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+        "curl http://169.254.170.2/v2/credentials/",
+        "curl http://127.0.0.1:8200/v1/auth/token/lookup-self",
+        "git push origin dependabot/github_actions/format/main",
+      ].join("\n"));
+      const findings = runAllHookRules(file);
+      expect(findings.some((f) => f.evidence === "169.254.169.254")).toBe(true);
+      expect(findings.some((f) => f.evidence === "169.254.170.2")).toBe(true);
+      expect(findings.some((f) => f.evidence === "127.0.0.1:8200")).toBe(true);
+      expect(findings.some((f) => f.evidence === "dependabot/github_actions/format/")).toBe(true);
+    });
+
+    it("flags current Mini Shai-Hulud hash markers in hook code", () => {
+      const file = makeHookCode([
+        "const packageHash = '7c12d8619f2db233e3d965a9307093355f149d5babc458912757a5e88fec0f54';",
+        "const masterKey = '0c0e8730695e997b3a53d77483f28573392319ec023f8fd6d7282121cf7cf192';",
+      ].join("\n"));
+      const findings = runAllHookRules(file);
+      expect(findings.some((f) => f.evidence === "7c12d8619f2db233e3d965a9307093355f149d5babc458912757a5e88fec0f54")).toBe(true);
+      expect(findings.some((f) => f.evidence === "0c0e8730695e997b3a53d77483f28573392319ec023f8fd6d7282121cf7cf192")).toBe(true);
+    });
+
     it("does not flag JS comment-only IOC references", () => {
       const file = makeHookCode("// gh-token-monitor appears here as documentation only");
       const findings = runAllHookRules(file);
