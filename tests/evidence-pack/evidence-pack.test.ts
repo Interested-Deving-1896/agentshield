@@ -10,6 +10,7 @@ import {
   verifyEvidencePack,
   writeEvidencePack,
 } from "../../src/evidence-pack/index.js";
+import { verifyPackages } from "../../src/supply-chain/index.js";
 import type { BaselineComparison } from "../../src/baseline/index.js";
 import type { PolicyEvaluation } from "../../src/policy/index.js";
 import type { SupplyChainReport } from "../../src/supply-chain/index.js";
@@ -799,6 +800,132 @@ describe("writeEvidencePack", () => {
           join(riskyOutputDir, "manifest.json"),
           join(riskyOutputDir, "agentshield-report.json"),
           join(riskyOutputDir, "supply-chain.json"),
+        ]),
+        recommendation: "Route to security owner before promotion.",
+      }),
+    ]);
+  });
+
+  it("routes current Mini Shai-Hulud supply-chain incident packs as security blockers", async () => {
+    const targetPath = mkdtempSync(join(tmpdir(), "agentshield-fleet-incident-target-"));
+    const outputDir = mkdtempSync(join(tmpdir(), "agentshield-fleet-incident-pack-"));
+    const supplyChainReport = await verifyPackages([
+      {
+        name: "@tanstack/react-router",
+        version: "1.169.8",
+        source: "lockfile",
+        serverName: "package-lock.json",
+      },
+      {
+        name: "@mistralai/mistralai",
+        version: "2.2.4",
+        source: "manifest",
+        serverName: "package.json",
+      },
+    ]);
+
+    writeFleetEvidencePack({
+      outputDir,
+      targetPath,
+      report: makeCleanReport(targetPath),
+      policyEvaluation: makePassingPolicyEvaluation(),
+      baselineComparison: makePassingBaselineComparison(targetPath),
+      supplyChainReport,
+      generatedAt: "2026-05-18T12:40:00.000Z",
+      repository: "affaan-m/incident-repo",
+    });
+
+    const inspection = inspectEvidencePack(outputDir);
+    const supplyChain = JSON.parse(readFileSync(join(outputDir, "supply-chain.json"), "utf-8")) as SupplyChainReport;
+    const fleet = inspectEvidencePackFleet([outputDir]);
+
+    expect(inspection.ok).toBe(true);
+    expect(inspection.report).toMatchObject({
+      findings: {
+        critical: 0,
+        high: 0,
+      },
+    });
+    expect(inspection.policy).toMatchObject({
+      status: "passed",
+    });
+    expect(inspection.baseline).toMatchObject({
+      status: "passed",
+    });
+    expect(inspection.supplyChain).toMatchObject({
+      totalPackages: 2,
+      riskyPackages: 2,
+      criticalCount: 2,
+      highCount: 0,
+    });
+    expect(supplyChain.packages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        package: expect.objectContaining({
+          name: "@tanstack/react-router",
+          version: "1.169.8",
+        }),
+        risks: expect.arrayContaining([
+          expect.objectContaining({
+            type: "known-malicious",
+            severity: "critical",
+            description: expect.stringContaining("Mini Shai-Hulud"),
+          }),
+        ]),
+      }),
+      expect.objectContaining({
+        package: expect.objectContaining({
+          name: "@mistralai/mistralai",
+          version: "2.2.4",
+        }),
+        risks: expect.arrayContaining([
+          expect.objectContaining({
+            type: "known-malicious",
+            severity: "critical",
+            description: expect.stringContaining("Mini Shai-Hulud"),
+          }),
+        ]),
+      }),
+    ]));
+    expect(fleet.requiresAttention).toBe(true);
+    expect(fleet.summary).toMatchObject({
+      totalPacks: 1,
+      verifiedPacks: 1,
+      totalFindings: 0,
+      critical: 0,
+      high: 0,
+      policyFailures: 0,
+      baselineRegressions: 0,
+      riskyPackages: 2,
+    });
+    expect(fleet.operatorReadback).toMatchObject({
+      status: "blocked",
+      ready: false,
+      requiresApproval: true,
+      blockingItemCount: 1,
+      owners: ["affaan-m/incident-repo security owner"],
+      routesRequiringApproval: ["security-blocker"],
+      nextAction: "Route review items to listed owners and attach approval before promotion.",
+    });
+    expect(fleet.entries).toEqual([
+      expect.objectContaining({
+        outputDir,
+        repository: "affaan-m/incident-repo",
+        ok: true,
+        route: "security-blocker",
+        reason: "2 critical supply-chain packages",
+      }),
+    ]);
+    expect(fleet.reviewItems).toEqual([
+      expect.objectContaining({
+        route: "security-blocker",
+        severity: "high",
+        owner: "affaan-m/incident-repo security owner",
+        repository: "affaan-m/incident-repo",
+        beforeState: "Evidence pack has security blockers: 2 critical supply-chain packages.",
+        evidencePaths: expect.arrayContaining([
+          join(outputDir, "manifest.json"),
+          join(outputDir, "agentshield-report.json"),
+          join(outputDir, "supply-chain.json"),
         ]),
         recommendation: "Route to security owner before promotion.",
       }),
