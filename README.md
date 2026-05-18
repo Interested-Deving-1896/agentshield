@@ -108,12 +108,12 @@ JSON reports now expose `findings[].runtimeConfidence` when AgentShield can dist
 
 **102 rules** across 5 categories, graded A–F with a 0–100 numeric score.
 
-### Secrets Detection (10 rules, 14 patterns)
+### Secrets Detection
 
 | What | Examples |
 |------|----------|
-| API keys | Anthropic (`sk-ant-`), OpenAI (`sk-proj-`), AWS (`AKIA`), Google (`AIza`), Stripe (`sk_test_`/`sk_live_`) |
-| Tokens | GitHub PATs (`ghp_`/`github_pat_`), Slack (`xox[bprs]-`), JWTs (`eyJ...`), Bearer tokens |
+| API keys | Anthropic (`sk-ant-`), OpenAI (`sk-proj-`/`sk-`), xAI (`xai-`), AWS (`AKIA`), Google/Gemini (`AIza`), Stripe (`sk_test_`/`sk_live_`) |
+| Tokens | GitHub PATs (`ghp_`/`github_pat_`), Linear (`lin_api_`), Cloudflare (`CF_API_TOKEN=`), Slack (`xox[bprs]-`), JWTs (`eyJ...`), Bearer tokens |
 | Credentials | Hardcoded passwords, database connection strings (postgres/mongo/mysql/redis), private key material |
 | Env leaks | Secrets passed through environment variables in configs, `echo $SECRET` in hooks |
 

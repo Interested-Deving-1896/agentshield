@@ -20,6 +20,16 @@ const SECRET_PATTERNS: ReadonlyArray<{
     description: "OpenAI API key",
   },
   {
+    name: "openai-legacy-api-key",
+    pattern: /sk-(?!ant-|proj-)[a-zA-Z0-9_-]{20,}/g,
+    description: "OpenAI API key",
+  },
+  {
+    name: "xai-api-key",
+    pattern: /xai-[a-zA-Z0-9_-]{20,}/g,
+    description: "xAI API key",
+  },
+  {
     name: "github-pat",
     pattern: /ghp_[a-zA-Z0-9]{36,}/g,
     description: "GitHub personal access token",
@@ -28,6 +38,16 @@ const SECRET_PATTERNS: ReadonlyArray<{
     name: "github-fine-grained",
     pattern: /github_pat_[a-zA-Z0-9_]{20,}/g,
     description: "GitHub fine-grained token",
+  },
+  {
+    name: "linear-api-key",
+    pattern: /lin_api_[a-zA-Z0-9]{20,}/g,
+    description: "Linear API key",
+  },
+  {
+    name: "cloudflare-api-token",
+    pattern: /(?:CLOUDFLARE_API_TOKEN|CLOUDFLARE_TOKEN|CF_API_TOKEN|CF_TOKEN)\s*[=:]\s*["']?[a-zA-Z0-9_-]{20,}["']?/gi,
+    description: "Cloudflare API token",
   },
   {
     name: "aws-access-key",

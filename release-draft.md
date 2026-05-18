@@ -24,6 +24,8 @@ Linear, and ECC Tools flows can consume directly.
 - Added GitHub Action policy-promotion review outputs and job-summary evidence
   so CI can route owner approval, protected rollout, and runtime-smoke
   `reviewItems` from checksum-verified policy exports.
+- Expanded enterprise credential detection and evidence-pack redaction for
+  OpenAI legacy keys, xAI keys, Linear tokens, and labeled Cloudflare tokens.
 
 ## Validation
 

@@ -353,6 +353,9 @@ describe("writeEvidencePack", () => {
     const githubToken = ["github", "pat", "11AAVERYLONGTOKENVALUE", "abcdefghijklmnopqrstuvwxyz0123456789"].join("_");
     const npmToken = ["npm", "abcdefghijklmnopqrstuvwxyz1234567890"].join("_");
     const linearToken = ["lin", "api", "abcdefghijklmnopqrstuvwxyz123456"].join("_");
+    const xaiToken = ["xai", "abcdefghijklmnopqrstuvwxyz1234567890"].join("-");
+    const cloudflareTokenValue = "cloudflaretokenabcdefghijklmnopqrstuvwxyz123456";
+    const cloudflareToken = `CF_API_TOKEN=${cloudflareTokenValue}`;
     const googleToken = ["AI", "zaSyA1234567890abcdefghijklmnopqr"].join("");
     const jwtToken = [
       ["eyJ", "hbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"].join(""),
@@ -370,6 +373,8 @@ describe("writeEvidencePack", () => {
           `GitHub ${githubToken}`,
           `npm ${npmToken}`,
           `Linear ${linearToken}`,
+          `xAI ${xaiToken}`,
+          `Cloudflare ${cloudflareToken}`,
           `Google ${googleToken}`,
           `JWT ${jwtToken}`,
         ].join(" "),
@@ -379,6 +384,8 @@ describe("writeEvidencePack", () => {
           githubToken,
           npmToken,
           linearToken,
+          xaiToken,
+          cloudflareToken,
           googleToken,
           jwtToken,
         ].join("\n"),
@@ -400,6 +407,8 @@ describe("writeEvidencePack", () => {
       expect(artifact).not.toContain(githubToken);
       expect(artifact).not.toContain(npmToken);
       expect(artifact).not.toContain(linearToken);
+      expect(artifact).not.toContain(xaiToken);
+      expect(artifact).not.toContain(cloudflareTokenValue);
       expect(artifact).not.toContain(googleToken);
       expect(artifact).not.toContain(jwtToken.split(".")[0]);
     }

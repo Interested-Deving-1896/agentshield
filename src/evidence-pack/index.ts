@@ -1298,6 +1298,8 @@ function buildReplacements(targetPath: string): ReadonlyArray<[RegExp, string]> 
     [/npm_[A-Za-z0-9]{20,}\b/g, "<redacted-token>"],
     [/lin_api_[A-Za-z0-9]{20,}\b/g, "<redacted-token>"],
     [/(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{12,}\b/g, "<redacted-token>"],
+    [/xai-[A-Za-z0-9_-]{20,}\b/g, "<redacted-token>"],
+    [/((?:CLOUDFLARE_API_TOKEN|CLOUDFLARE_TOKEN|CF_API_TOKEN|CF_TOKEN)\s*[:=]\s*["']?)[A-Za-z0-9_-]{20,}/gi, "$1<redacted-token>"],
     [/AIza[0-9A-Za-z_-]{20,}\b/g, "<redacted-token>"],
     [/hf_[A-Za-z0-9]{20,}\b/g, "<redacted-token>"],
     [/vercel_[A-Za-z0-9]{20,}\b/g, "<redacted-token>"],

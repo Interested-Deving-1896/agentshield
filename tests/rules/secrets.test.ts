@@ -25,6 +25,25 @@ describe("secretRules", () => {
       expect(findings.some((f) => f.title.includes("OpenAI API key"))).toBe(true);
     });
 
+    it("detects enterprise AI and workflow API tokens", () => {
+      const openaiToken = ["sk", "abcdefghijklmnopqrstuvwxyz1234567890"].join("-");
+      const xaiToken = ["xai", "abcdefghijklmnopqrstuvwxyz1234567890"].join("-");
+      const linearToken = ["lin", "api", "abcdefghijklmnopqrstuvwxyz123456"].join("_");
+      const cloudflareToken = ["CF_API_TOKEN=", "cloudflaretokenabcdefghijklmnopqrstuvwxyz123456"].join("");
+      const file = makeFile([
+        `openai: ${openaiToken}`,
+        `xai: ${xaiToken}`,
+        `linear: ${linearToken}`,
+        cloudflareToken,
+      ].join("\n"));
+      const findings = runAllSecretRules(file);
+
+      expect(findings.some((f) => f.title.includes("OpenAI API key"))).toBe(true);
+      expect(findings.some((f) => f.title.includes("xAI API key"))).toBe(true);
+      expect(findings.some((f) => f.title.includes("Linear API key"))).toBe(true);
+      expect(findings.some((f) => f.title.includes("Cloudflare API token"))).toBe(true);
+    });
+
     it("detects GitHub PATs", () => {
       const file = makeFile("token: ghp_abcdefghijklmnopqrstuvwxyz1234567890AB");
       const findings = runAllSecretRules(file);
