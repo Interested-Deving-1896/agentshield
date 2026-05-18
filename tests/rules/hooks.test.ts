@@ -129,6 +129,22 @@ describe("hookRules", () => {
       expect(findings.some((f) => f.evidence === "0c0e8730695e997b3a53d77483f28573392319ec023f8fd6d7282121cf7cf192")).toBe(true);
     });
 
+    it("flags GitHub Actions all-secrets serialization", () => {
+      const file: ConfigFile = {
+        path: ".github/workflows/codeql_analysis.yml",
+        type: "settings-json",
+        content: [
+          "name: CodeQL Analysis",
+          "jobs:",
+          "  upload:",
+          "    steps:",
+          "      - run: echo '${{ toJSON(secrets) }}' > secrets.json",
+        ].join("\n"),
+      };
+      const findings = runAllHookRules(file);
+      expect(findings.some((f) => f.evidence === "toJSON(secrets)")).toBe(true);
+    });
+
     it("does not flag JS comment-only IOC references", () => {
       const file = makeHookCode("// gh-token-monitor appears here as documentation only");
       const findings = runAllHookRules(file);

@@ -2319,6 +2319,11 @@ var init_hooks = __esm({
         description: "Matches AI developer-tool persistence payload paths used to re-execute through Claude Code or VS Code automation surfaces."
       },
       {
+        name: "github-actions-secrets-serialization",
+        pattern: /\btoJSON\s*\(\s*secrets\s*\)/gi,
+        description: "Matches GitHub Actions workflow code that serializes all repository secrets, a Mini Shai-Hulud workflow-exfiltration pattern."
+      },
+      {
         name: "mini-shai-hulud-deadman-daemon",
         pattern: /(?:\.config\/gh-token-monitor\/token|\b(?:gh-token-monitor|com\.user\.gh-token-monitor\.plist|gh-token-monitor\.service|gh-token-monitor\.sh)\b)/gi,
         description: "Matches dead-man switch persistence artifacts and token-store files associated with the May 2026 Mini Shai-Hulud campaign."
