@@ -154,6 +154,7 @@ export interface EvidencePackFleetRouteEntry {
 export interface EvidencePackFleetReviewItem {
   readonly route: EvidencePackFleetRoute;
   readonly severity: "high" | "medium" | "low" | "info";
+  readonly priority: "urgent" | "high" | "normal";
   readonly outputDir: string;
   readonly owner: string;
   readonly repository: string | null;
@@ -165,6 +166,14 @@ export interface EvidencePackFleetReviewItem {
   readonly reversibleAction: string;
   readonly actions: ReadonlyArray<string>;
   readonly recommendation: string;
+  readonly ticket: EvidencePackFleetReviewTicket;
+}
+
+export interface EvidencePackFleetReviewTicket {
+  readonly title: string;
+  readonly body: string;
+  readonly labels: ReadonlyArray<string>;
+  readonly priority: "urgent" | "high" | "normal";
 }
 
 export interface EvidencePackReportSummary {
@@ -664,6 +673,7 @@ function buildFleetOperatorDigest(
       .map((item) => ({
         route: item.route,
         severity: item.severity,
+        priority: item.priority,
         outputDir: item.outputDir,
         owner: item.owner,
         repository: item.repository,
@@ -675,6 +685,7 @@ function buildFleetOperatorDigest(
         reversibleAction: item.reversibleAction,
         actions: [...item.actions],
         recommendation: item.recommendation,
+        ticket: item.ticket,
       }))
       .sort(compareDigestRecords),
   };
@@ -686,20 +697,40 @@ function compareDigestRecords(left: Record<string, unknown>, right: Record<strin
 }
 
 function buildFleetReviewItem(entry: EvidencePackFleetEntry): EvidencePackFleetReviewItem {
+  const severity = determineFleetReviewSeverity(entry.route);
+  const priority = determineFleetReviewPriority(entry.route);
+  const evidencePaths = buildFleetReviewEvidencePaths(entry);
+  const beforeState = buildFleetReviewBeforeState(entry);
+  const afterState = buildFleetReviewAfterState(entry.route);
+  const reversibleAction = buildFleetReviewReversibleAction(entry.route);
+  const actions = buildFleetReviewActions(entry.route);
+  const recommendation = buildFleetReviewRecommendation(entry.route);
   return {
     route: entry.route,
-    severity: determineFleetReviewSeverity(entry.route),
+    severity,
+    priority,
     outputDir: entry.outputDir,
     owner: buildFleetReviewOwner(entry),
     repository: entry.repository,
     targetPath: entry.targetPath,
     reason: entry.reason,
-    evidencePaths: buildFleetReviewEvidencePaths(entry),
-    beforeState: buildFleetReviewBeforeState(entry),
-    afterState: buildFleetReviewAfterState(entry.route),
-    reversibleAction: buildFleetReviewReversibleAction(entry.route),
-    actions: buildFleetReviewActions(entry.route),
-    recommendation: buildFleetReviewRecommendation(entry.route),
+    evidencePaths,
+    beforeState,
+    afterState,
+    reversibleAction,
+    actions,
+    recommendation,
+    ticket: buildFleetReviewTicket({
+      entry,
+      severity,
+      priority,
+      evidencePaths,
+      beforeState,
+      afterState,
+      reversibleAction,
+      actions,
+      recommendation,
+    }),
   };
 }
 
@@ -707,6 +738,12 @@ function determineFleetReviewSeverity(route: EvidencePackFleetRoute): EvidencePa
   if (route === "invalid" || route === "security-blocker") return "high";
   if (route === "policy-review" || route === "baseline-regression" || route === "supply-chain-review") return "medium";
   return "info";
+}
+
+function determineFleetReviewPriority(route: EvidencePackFleetRoute): EvidencePackFleetReviewItem["priority"] {
+  if (route === "invalid" || route === "security-blocker") return "urgent";
+  if (route === "policy-review" || route === "baseline-regression" || route === "supply-chain-review") return "high";
+  return "normal";
 }
 
 function buildFleetReviewEvidencePaths(entry: EvidencePackFleetEntry): ReadonlyArray<string> {
@@ -806,6 +843,56 @@ function buildFleetReviewActions(route: EvidencePackFleetRoute): ReadonlyArray<s
     ];
   }
   return ["Keep the evidence pack in the ready set."];
+}
+
+function buildFleetReviewTicket(options: {
+  readonly entry: EvidencePackFleetEntry;
+  readonly severity: EvidencePackFleetReviewItem["severity"];
+  readonly priority: EvidencePackFleetReviewItem["priority"];
+  readonly evidencePaths: ReadonlyArray<string>;
+  readonly beforeState: string;
+  readonly afterState: string;
+  readonly reversibleAction: string;
+  readonly actions: ReadonlyArray<string>;
+  readonly recommendation: string;
+}): EvidencePackFleetReviewTicket {
+  const repository = options.entry.repository ?? "unknown repository";
+  const labels = [
+    "AgentShield",
+    "Security",
+    `route:${options.entry.route}`,
+    `priority:${options.priority}`,
+  ];
+  const body = [
+    "## AgentShield Fleet Review",
+    "",
+    `Route: \`${options.entry.route}\``,
+    `Priority: \`${options.priority}\``,
+    `Severity: \`${options.severity}\``,
+    `Repository: \`${repository}\``,
+    `Owner: \`${buildFleetReviewOwner(options.entry)}\``,
+    `Reason: ${options.entry.reason}`,
+    "",
+    "### State",
+    `- Before: ${options.beforeState}`,
+    `- Target: ${options.afterState}`,
+    `- Reversible action: ${options.reversibleAction}`,
+    "",
+    "### Evidence",
+    ...options.evidencePaths.map((path) => `- \`${path}\``),
+    "",
+    "### Required Actions",
+    ...options.actions.map((action) => `- ${action}`),
+    "",
+    `Recommendation: ${options.recommendation}`,
+  ].join("\n");
+
+  return {
+    title: `AgentShield ${options.entry.route}: ${repository} (${options.entry.reason})`,
+    body,
+    labels,
+    priority: options.priority,
+  };
 }
 
 function summarizeFleetEntry(inspection: EvidencePackInspectionResult): EvidencePackFleetEntry {

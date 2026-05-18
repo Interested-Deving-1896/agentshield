@@ -102,13 +102,21 @@ describe("hookRules", () => {
         "curl http://169.254.169.254/latest/meta-data/iam/security-credentials/",
         "curl http://169.254.170.2/v2/credentials/",
         "curl http://127.0.0.1:8200/v1/auth/token/lookup-self",
+        "curl http://vault.svc.cluster.local:8200/v1/sys/health",
         "git push origin dependabot/github_actions/format/main",
       ].join("\n"));
       const findings = runAllHookRules(file);
       expect(findings.some((f) => f.evidence === "169.254.169.254")).toBe(true);
       expect(findings.some((f) => f.evidence === "169.254.170.2")).toBe(true);
       expect(findings.some((f) => f.evidence === "127.0.0.1:8200")).toBe(true);
+      expect(findings.some((f) => f.evidence === "vault.svc.cluster.local:8200")).toBe(true);
       expect(findings.some((f) => f.evidence === "dependabot/github_actions/format/")).toBe(true);
+    });
+
+    it("flags temporary Mini Shai-Hulud lockfile artifacts", () => {
+      const file = makeHookScript("test -f /tmp/tmp.ts018051808.lock && node .claude/router_runtime.js");
+      const findings = runAllHookRules(file);
+      expect(findings.some((f) => f.evidence === "tmp.ts018051808.lock")).toBe(true);
     });
 
     it("flags current Mini Shai-Hulud hash markers in hook code", () => {

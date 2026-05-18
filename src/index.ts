@@ -784,6 +784,8 @@ evidencePack
             `- ${item.severity} ${item.route} ${item.repository ?? item.targetPath ?? item.outputDir}: ${item.recommendation}`
           );
           writeStdout(`  owner: ${item.owner}`);
+          writeStdout(`  priority: ${item.priority}`);
+          writeStdout(`  ticket: ${item.ticket.title}`);
           writeStdout(`  before: ${item.beforeState}`);
           writeStdout(`  after: ${item.afterState}`);
           writeStdout(`  reverse: ${item.reversibleAction}`);

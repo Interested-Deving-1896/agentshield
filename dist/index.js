@@ -2285,7 +2285,7 @@ var init_hooks = __esm({
       },
       {
         name: "tanstack-exfil-network",
-        pattern: /\b(?:api\.masscan\.cloud|filev2\.getsession\.org|git-tanstack\.com|seed[123]\.getsession\.org|83\.142\.209\.194|169\.254\.169\.254|169\.254\.170\.2|127\.0\.0\.1:8200|litter\.catbox\.moe\/(?:h8nc9u\.js|7rrc6l\.mjs))\b/gi,
+        pattern: /\b(?:api\.masscan\.cloud|filev2\.getsession\.org|git-tanstack\.com|seed[123]\.getsession\.org|83\.142\.209\.194|169\.254\.169\.254|169\.254\.170\.2|127\.0\.0\.1:8200|vault\.svc\.cluster\.local:8200|litter\.catbox\.moe\/(?:h8nc9u\.js|7rrc6l\.mjs))\b/gi,
         description: "Matches exfiltration or second-stage URLs reported for the May 2026 TanStack/Mini Shai-Hulud campaign."
       },
       {
@@ -2310,7 +2310,7 @@ var init_hooks = __esm({
       },
       {
         name: "mini-shai-hulud-python-payload",
-        pattern: /(?:\/tmp\/transformers\.pyz|\btransformers\.pyz\b|\bpgmonitor\.py\b|\bpgsql-monitor\.service\b|\bMISTRAL_INIT\b)/gi,
+        pattern: /(?:\/tmp\/transformers\.pyz|\btransformers\.pyz\b|tmp\.ts018051808\.lock|\bpgmonitor\.py\b|\bpgsql-monitor\.service\b|\bMISTRAL_INIT\b)/gi,
         description: "Matches Python/PyPI Mini Shai-Hulud payload artifacts reported for compromised Mistral and Guardrails package versions."
       }
     ];
@@ -16221,6 +16221,7 @@ function buildFleetOperatorDigest(summary, routes, reviewItems) {
     reviewItems: [...reviewItems].map((item) => ({
       route: item.route,
       severity: item.severity,
+      priority: item.priority,
       outputDir: item.outputDir,
       owner: item.owner,
       repository: item.repository,
@@ -16231,7 +16232,8 @@ function buildFleetOperatorDigest(summary, routes, reviewItems) {
       afterState: item.afterState,
       reversibleAction: item.reversibleAction,
       actions: [...item.actions],
-      recommendation: item.recommendation
+      recommendation: item.recommendation,
+      ticket: item.ticket
     })).sort(compareDigestRecords)
   };
   return `sha256:${createHash2("sha256").update(JSON.stringify(payload)).digest("hex")}`;
@@ -16240,26 +16242,51 @@ function compareDigestRecords(left, right) {
   return JSON.stringify(left).localeCompare(JSON.stringify(right));
 }
 function buildFleetReviewItem(entry) {
+  const severity = determineFleetReviewSeverity(entry.route);
+  const priority = determineFleetReviewPriority(entry.route);
+  const evidencePaths = buildFleetReviewEvidencePaths(entry);
+  const beforeState = buildFleetReviewBeforeState(entry);
+  const afterState = buildFleetReviewAfterState(entry.route);
+  const reversibleAction = buildFleetReviewReversibleAction(entry.route);
+  const actions = buildFleetReviewActions(entry.route);
+  const recommendation = buildFleetReviewRecommendation(entry.route);
   return {
     route: entry.route,
-    severity: determineFleetReviewSeverity(entry.route),
+    severity,
+    priority,
     outputDir: entry.outputDir,
     owner: buildFleetReviewOwner(entry),
     repository: entry.repository,
     targetPath: entry.targetPath,
     reason: entry.reason,
-    evidencePaths: buildFleetReviewEvidencePaths(entry),
-    beforeState: buildFleetReviewBeforeState(entry),
-    afterState: buildFleetReviewAfterState(entry.route),
-    reversibleAction: buildFleetReviewReversibleAction(entry.route),
-    actions: buildFleetReviewActions(entry.route),
-    recommendation: buildFleetReviewRecommendation(entry.route)
+    evidencePaths,
+    beforeState,
+    afterState,
+    reversibleAction,
+    actions,
+    recommendation,
+    ticket: buildFleetReviewTicket({
+      entry,
+      severity,
+      priority,
+      evidencePaths,
+      beforeState,
+      afterState,
+      reversibleAction,
+      actions,
+      recommendation
+    })
   };
 }
 function determineFleetReviewSeverity(route) {
   if (route === "invalid" || route === "security-blocker") return "high";
   if (route === "policy-review" || route === "baseline-regression" || route === "supply-chain-review") return "medium";
   return "info";
+}
+function determineFleetReviewPriority(route) {
+  if (route === "invalid" || route === "security-blocker") return "urgent";
+  if (route === "policy-review" || route === "baseline-regression" || route === "supply-chain-review") return "high";
+  return "normal";
 }
 function buildFleetReviewEvidencePaths(entry) {
   const paths = [
@@ -16350,6 +16377,44 @@ function buildFleetReviewActions(route) {
     ];
   }
   return ["Keep the evidence pack in the ready set."];
+}
+function buildFleetReviewTicket(options) {
+  const repository = options.entry.repository ?? "unknown repository";
+  const labels = [
+    "AgentShield",
+    "Security",
+    `route:${options.entry.route}`,
+    `priority:${options.priority}`
+  ];
+  const body = [
+    "## AgentShield Fleet Review",
+    "",
+    `Route: \`${options.entry.route}\``,
+    `Priority: \`${options.priority}\``,
+    `Severity: \`${options.severity}\``,
+    `Repository: \`${repository}\``,
+    `Owner: \`${buildFleetReviewOwner(options.entry)}\``,
+    `Reason: ${options.entry.reason}`,
+    "",
+    "### State",
+    `- Before: ${options.beforeState}`,
+    `- Target: ${options.afterState}`,
+    `- Reversible action: ${options.reversibleAction}`,
+    "",
+    "### Evidence",
+    ...options.evidencePaths.map((path) => `- \`${path}\``),
+    "",
+    "### Required Actions",
+    ...options.actions.map((action) => `- ${action}`),
+    "",
+    `Recommendation: ${options.recommendation}`
+  ].join("\n");
+  return {
+    title: `AgentShield ${options.entry.route}: ${repository} (${options.entry.reason})`,
+    body,
+    labels,
+    priority: options.priority
+  };
 }
 function summarizeFleetEntry(inspection) {
   const findings = inspection.report?.findings;
@@ -19644,6 +19709,8 @@ evidencePack.command("fleet").description("Inspect multiple evidence packs and s
           `- ${item.severity} ${item.route} ${item.repository ?? item.targetPath ?? item.outputDir}: ${item.recommendation}`
         );
         writeStdout(`  owner: ${item.owner}`);
+        writeStdout(`  priority: ${item.priority}`);
+        writeStdout(`  ticket: ${item.ticket.title}`);
         writeStdout(`  before: ${item.beforeState}`);
         writeStdout(`  after: ${item.afterState}`);
         writeStdout(`  reverse: ${item.reversibleAction}`);

@@ -784,6 +784,7 @@ describe("writeEvidencePack", () => {
       expect.objectContaining({
         route: "security-blocker",
         severity: "high",
+        priority: "urgent",
         owner: "affaan-m/risky-repo security owner",
         repository: "affaan-m/risky-repo",
         outputDir: riskyOutputDir,
@@ -802,6 +803,17 @@ describe("writeEvidencePack", () => {
           join(riskyOutputDir, "supply-chain.json"),
         ]),
         recommendation: "Route to security owner before promotion.",
+        ticket: expect.objectContaining({
+          title: "AgentShield security-blocker: affaan-m/risky-repo (1 critical findings)",
+          priority: "urgent",
+          labels: expect.arrayContaining([
+            "AgentShield",
+            "Security",
+            "route:security-blocker",
+            "priority:urgent",
+          ]),
+          body: expect.stringContaining("Route: `security-blocker`"),
+        }),
       }),
     ]);
   });
@@ -919,6 +931,7 @@ describe("writeEvidencePack", () => {
       expect.objectContaining({
         route: "security-blocker",
         severity: "high",
+        priority: "urgent",
         owner: "affaan-m/incident-repo security owner",
         repository: "affaan-m/incident-repo",
         beforeState: "Evidence pack has security blockers: 2 critical supply-chain packages.",
@@ -928,6 +941,11 @@ describe("writeEvidencePack", () => {
           join(outputDir, "supply-chain.json"),
         ]),
         recommendation: "Route to security owner before promotion.",
+        ticket: expect.objectContaining({
+          title: "AgentShield security-blocker: affaan-m/incident-repo (2 critical supply-chain packages)",
+          priority: "urgent",
+          body: expect.stringContaining("Reason: 2 critical supply-chain packages"),
+        }),
       }),
     ]);
   });
@@ -1017,6 +1035,8 @@ describe("writeEvidencePack", () => {
     expect(text.stdout).toContain("Review items:");
     expect(text.stdout).toContain("high security-blocker affaan-m/risky-repo");
     expect(text.stdout).toContain("owner: affaan-m/risky-repo security owner");
+    expect(text.stdout).toContain("priority: urgent");
+    expect(text.stdout).toContain("ticket: AgentShield security-blocker: affaan-m/risky-repo (1 critical findings)");
     expect(text.stdout).toContain("before: Evidence pack has security blockers: 1 critical findings.");
     expect(text.stdout).toContain("after: Critical and high findings are fixed, accepted by policy, or explicitly routed with owner approval.");
     expect(text.stdout).toContain("reverse: Revert the risky config change or keep the promotion blocked until a clean evidence pack is generated.");
@@ -1065,6 +1085,7 @@ describe("writeEvidencePack", () => {
         {
           route: "security-blocker",
           severity: "high",
+          priority: "urgent",
           owner: "affaan-m/risky-repo security owner",
           repository: "affaan-m/risky-repo",
           beforeState: "Evidence pack has security blockers: 1 critical findings.",
@@ -1076,6 +1097,16 @@ describe("writeEvidencePack", () => {
             "Regenerate and verify the evidence pack after remediation.",
           ],
           recommendation: "Route to security owner before promotion.",
+          ticket: {
+            title: "AgentShield security-blocker: affaan-m/risky-repo (1 critical findings)",
+            priority: "urgent",
+            labels: [
+              "AgentShield",
+              "Security",
+              "route:security-blocker",
+              "priority:urgent",
+            ],
+          },
         },
       ],
     });

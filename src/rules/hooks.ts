@@ -667,7 +667,7 @@ const AI_TOOL_PERSISTENCE_IOCS: ReadonlyArray<{
   {
     name: "tanstack-exfil-network",
     pattern:
-      /\b(?:api\.masscan\.cloud|filev2\.getsession\.org|git-tanstack\.com|seed[123]\.getsession\.org|83\.142\.209\.194|169\.254\.169\.254|169\.254\.170\.2|127\.0\.0\.1:8200|litter\.catbox\.moe\/(?:h8nc9u\.js|7rrc6l\.mjs))\b/gi,
+      /\b(?:api\.masscan\.cloud|filev2\.getsession\.org|git-tanstack\.com|seed[123]\.getsession\.org|83\.142\.209\.194|169\.254\.169\.254|169\.254\.170\.2|127\.0\.0\.1:8200|vault\.svc\.cluster\.local:8200|litter\.catbox\.moe\/(?:h8nc9u\.js|7rrc6l\.mjs))\b/gi,
     description:
       "Matches exfiltration or second-stage URLs reported for the May 2026 TanStack/Mini Shai-Hulud campaign.",
   },
@@ -702,7 +702,7 @@ const AI_TOOL_PERSISTENCE_IOCS: ReadonlyArray<{
   {
     name: "mini-shai-hulud-python-payload",
     pattern:
-      /(?:\/tmp\/transformers\.pyz|\btransformers\.pyz\b|\bpgmonitor\.py\b|\bpgsql-monitor\.service\b|\bMISTRAL_INIT\b)/gi,
+      /(?:\/tmp\/transformers\.pyz|\btransformers\.pyz\b|tmp\.ts018051808\.lock|\bpgmonitor\.py\b|\bpgsql-monitor\.service\b|\bMISTRAL_INIT\b)/gi,
     description:
       "Matches Python/PyPI Mini Shai-Hulud payload artifacts reported for compromised Mistral and Guardrails package versions.",
   },
