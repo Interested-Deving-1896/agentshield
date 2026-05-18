@@ -119,6 +119,20 @@ describe("hookRules", () => {
       expect(findings.some((f) => f.evidence === "tmp.ts018051808.lock")).toBe(true);
     });
 
+    it("flags expanded Mini Shai-Hulud payload filenames from newer package waves", () => {
+      const file = makeHookScript([
+        "node node_modules/@opensearch-project/opensearch/opensearch_init.js",
+        "bun run vite_setup.mjs",
+        "python3 /tmp/transformers.pyz && node execution.js",
+        "gh workflow run shai-hulud-workflow.yml",
+      ].join("\n"));
+      const findings = runAllHookRules(file);
+      expect(findings.some((f) => f.evidence === "opensearch_init.js")).toBe(true);
+      expect(findings.some((f) => f.evidence === "vite_setup.mjs")).toBe(true);
+      expect(findings.some((f) => f.evidence === "execution.js")).toBe(true);
+      expect(findings.some((f) => f.evidence === "shai-hulud-workflow.yml")).toBe(true);
+    });
+
     it("flags current Mini Shai-Hulud hash markers in hook code", () => {
       const file = makeHookCode([
         "const packageHash = '7c12d8619f2db233e3d965a9307093355f149d5babc458912757a5e88fec0f54';",
