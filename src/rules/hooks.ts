@@ -190,6 +190,60 @@ function hasCompanionManifestPreToolUseHooks(
   );
 }
 
+function getJsonStringRanges(
+  content: string,
+  values: ReadonlyArray<string>
+): ReadonlyArray<{ readonly start: number; readonly end: number }> {
+  const ranges: Array<{ readonly start: number; readonly end: number }> = [];
+  const searchOffsets = new Map<string, number>();
+
+  for (const value of values) {
+    const escapedValue = JSON.stringify(value).slice(1, -1);
+    const startIndex = searchOffsets.get(escapedValue) ?? 0;
+    const index = content.indexOf(escapedValue, startIndex);
+
+    if (index === -1) {
+      continue;
+    }
+
+    ranges.push({ start: index, end: index + escapedValue.length });
+    searchOffsets.set(escapedValue, index + escapedValue.length);
+  }
+
+  return ranges;
+}
+
+function getPermissionDenyStringRanges(
+  file: ConfigFile
+): ReadonlyArray<{ readonly start: number; readonly end: number }> {
+  if (file.type !== "settings-json") {
+    return [];
+  }
+
+  try {
+    const config = JSON.parse(file.content);
+    const deny = config?.permissions?.deny;
+
+    if (!Array.isArray(deny)) {
+      return [];
+    }
+
+    return getJsonStringRanges(
+      file.content,
+      deny.filter((entry): entry is string => typeof entry === "string")
+    );
+  } catch {
+    return [];
+  }
+}
+
+function isIndexInRanges(
+  index: number,
+  ranges: ReadonlyArray<{ readonly start: number; readonly end: number }>
+): boolean {
+  return ranges.some((range) => index >= range.start && index < range.end);
+}
+
 function extractHookCommands(entry: unknown): ReadonlyArray<string> {
   const commands: string[] = [];
 
@@ -668,6 +722,7 @@ export const hookRules: ReadonlyArray<Rule> = [
       }
 
       const findings: Finding[] = [];
+      const defensiveDenyRanges = getPermissionDenyStringRanges(file);
       const searchTargets = [
         { content: file.content, source: "content" },
         { content: normalizeConfigPath(file.path), source: "path" },
@@ -678,6 +733,9 @@ export const hookRules: ReadonlyArray<Rule> = [
           for (const match of findAllMatches(target.content, ioc.pattern)) {
             const index = match.index ?? 0;
             if (target.source === "content" && isCommentOnlyAutomationMatch(file, target.content, index)) {
+              continue;
+            }
+            if (target.source === "content" && isIndexInRanges(index, defensiveDenyRanges)) {
               continue;
             }
 

@@ -126,6 +126,39 @@ describe("hookRules", () => {
       const findings = runAllHookRules(file);
       expect(findings.some((f) => f.id.includes("hooks-ai-tool-persistence-ioc"))).toBe(false);
     });
+
+    it("does not flag defensive IOC deny-list entries", () => {
+      const file = makeSettings(JSON.stringify({
+        permissions: {
+          deny: [
+            "Bash(*router_runtime.js*)",
+            "Bash(*filev2.getsession.org*)",
+            "Bash(*gh-token-monitor*)",
+          ],
+        },
+      }));
+      const findings = runAllHookRules(file);
+      expect(findings.some((f) => f.id.includes("hooks-ai-tool-persistence-ioc"))).toBe(false);
+    });
+
+    it("still flags IOC strings outside defensive deny-list entries", () => {
+      const file = makeSettings(JSON.stringify({
+        permissions: {
+          deny: ["Bash(*gh-token-monitor*)"],
+        },
+        hooks: {
+          PostToolUse: [
+            {
+              matcher: "*",
+              hooks: [{ type: "command", command: "node .claude/router_runtime.js" }],
+            },
+          ],
+        },
+      }));
+      const findings = runAllHookRules(file);
+      expect(findings.some((f) => f.evidence === ".claude/router_runtime.js")).toBe(true);
+      expect(findings.some((f) => f.evidence === "gh-token-monitor")).toBe(false);
+    });
   });
 
   describe("command injection", () => {

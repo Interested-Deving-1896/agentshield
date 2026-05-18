@@ -4035,6 +4035,42 @@ function hasCompanionManifestPreToolUseHooks(file, allFiles) {
     (other) => other !== file && other.type === "settings-json" && candidates.has(normalizeConfigPath(other.path)) && hasPreToolUseHooksInConfig(other.content)
   );
 }
+function getJsonStringRanges(content, values) {
+  const ranges = [];
+  const searchOffsets = /* @__PURE__ */ new Map();
+  for (const value of values) {
+    const escapedValue = JSON.stringify(value).slice(1, -1);
+    const startIndex = searchOffsets.get(escapedValue) ?? 0;
+    const index = content.indexOf(escapedValue, startIndex);
+    if (index === -1) {
+      continue;
+    }
+    ranges.push({ start: index, end: index + escapedValue.length });
+    searchOffsets.set(escapedValue, index + escapedValue.length);
+  }
+  return ranges;
+}
+function getPermissionDenyStringRanges(file) {
+  if (file.type !== "settings-json") {
+    return [];
+  }
+  try {
+    const config = JSON.parse(file.content);
+    const deny = config?.permissions?.deny;
+    if (!Array.isArray(deny)) {
+      return [];
+    }
+    return getJsonStringRanges(
+      file.content,
+      deny.filter((entry) => typeof entry === "string")
+    );
+  } catch {
+    return [];
+  }
+}
+function isIndexInRanges(index, ranges) {
+  return ranges.some((range) => index >= range.start && index < range.end);
+}
 function extractHookCommands2(entry) {
   const commands = [];
   if (!entry || typeof entry !== "object") {
@@ -4363,6 +4399,7 @@ var hookRules = [
         return [];
       }
       const findings = [];
+      const defensiveDenyRanges = getPermissionDenyStringRanges(file);
       const searchTargets = [
         { content: file.content, source: "content" },
         { content: normalizeConfigPath(file.path), source: "path" }
@@ -4372,6 +4409,9 @@ var hookRules = [
           for (const match of findAllMatches3(target.content, ioc.pattern)) {
             const index = match.index ?? 0;
             if (target.source === "content" && isCommentOnlyAutomationMatch(file, target.content, index)) {
+              continue;
+            }
+            if (target.source === "content" && isIndexInRanges(index, defensiveDenyRanges)) {
               continue;
             }
             findings.push({
