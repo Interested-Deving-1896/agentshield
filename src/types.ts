@@ -168,6 +168,8 @@ export type HarnessAdapterId =
   | "opencode"
   | "codex"
   | "gemini"
+  | "zed"
+  | "vscode"
   | "dmux"
   | "generic-terminal"
   | "project-local-template";

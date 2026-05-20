@@ -27,7 +27,7 @@ describe("harness adapter registry", () => {
     const dir = createTempDir();
     const summary = detectHarnessAdapters(dir);
 
-    expect(summary.totalRegistered).toBeGreaterThanOrEqual(7);
+    expect(summary.totalRegistered).toBeGreaterThanOrEqual(9);
     expect(summary.totalMatched).toBe(0);
     expect(summary.matched).toEqual([]);
   });
@@ -61,6 +61,42 @@ describe("harness adapter registry", () => {
     expect(summary.matched.every((adapter) => adapter.confidence === "strong")).toBe(true);
     expect(summary.matched.find((adapter) => adapter.id === "opencode")?.evidence).toContain(
       ".opencode/config.json"
+    );
+  });
+
+  it("detects editor-native agent and task automation surfaces", () => {
+    const dir = createTempDir();
+    mkdirSync(join(dir, ".zed"), { recursive: true });
+    mkdirSync(join(dir, ".vscode"), { recursive: true });
+
+    writeFileSync(
+      join(dir, ".zed", "settings.json"),
+      JSON.stringify({
+        agent: {
+          tool_permissions: {
+            default: "confirm",
+          },
+        },
+      })
+    );
+    writeFileSync(
+      join(dir, ".zed", "tasks.json"),
+      JSON.stringify([{ label: "agent setup", command: "node scripts/setup-agent.js" }])
+    );
+    writeFileSync(
+      join(dir, ".vscode", "tasks.json"),
+      JSON.stringify({ version: "2.0.0", tasks: [{ label: "agent bootstrap" }] })
+    );
+
+    const summary = detectHarnessAdapters(dir);
+
+    expect(ids(summary)).toEqual(["vscode", "zed"]);
+    expect(summary.matched.every((adapter) => adapter.confidence === "strong")).toBe(true);
+    expect(summary.matched.find((adapter) => adapter.id === "zed")?.evidence).toEqual(
+      expect.arrayContaining([".zed/settings.json", ".zed/tasks.json"])
+    );
+    expect(summary.matched.find((adapter) => adapter.id === "vscode")?.evidence).toEqual(
+      expect.arrayContaining([".vscode/tasks.json"])
     );
   });
 

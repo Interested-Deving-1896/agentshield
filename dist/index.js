@@ -128,6 +128,8 @@ function scanClaudeRoot(scanRoot, claudeRoot, files, seenFiles) {
     [".claude/router_runtime.js", "hook-code"],
     [".claude/setup.mjs", "hook-code"],
     [".vscode/tasks.json", "settings-json"],
+    [".zed/settings.json", "settings-json"],
+    [".zed/tasks.json", "settings-json"],
     ["package.json", "package-manager-config"],
     ["package-lock.json", "package-manager-config"],
     [".npmrc", "package-manager-config"],
@@ -168,6 +170,7 @@ function scanClaudeRoot(scanRoot, claudeRoot, files, seenFiles) {
     ["hooks", "hook-script"],
     [".claude/hooks", "hook-script"],
     [".vscode", "hook-script"],
+    [".zed", "hook-script"],
     ["rules", "rule-md"],
     [".claude/rules", "rule-md"],
     ["contexts", "context-md"],
@@ -2315,8 +2318,8 @@ var init_hooks = __esm({
       },
       {
         name: "ai-tool-persistence-payload",
-        pattern: /(?:\.claude\/(?:router_runtime\.js|setup\.mjs)|\.vscode\/setup\.mjs|\.github\/workflows\/codeql_analysis\.ya?ml)/gi,
-        description: "Matches AI developer-tool persistence payload paths used to re-execute through Claude Code or VS Code automation surfaces."
+        pattern: /(?:\.claude\/(?:router_runtime\.js|setup\.mjs)|\.(?:vscode|zed)\/setup\.mjs|\.github\/workflows\/codeql_analysis\.ya?ml)/gi,
+        description: "Matches AI developer-tool persistence payload paths used to re-execute through Claude Code, VS Code, or Zed automation surfaces."
       },
       {
         name: "github-actions-secrets-serialization",
@@ -9180,6 +9183,48 @@ var init_harness_adapters = __esm({
           { path: ".gemini/mcp.json", kind: "file", strength: "supporting" },
           { path: ".gemini/commands", kind: "directory", strength: "supporting" },
           { path: ".gemini/extensions", kind: "directory", strength: "supporting" }
+        ]
+      },
+      {
+        id: "zed",
+        name: "Zed",
+        description: "Zed project agent settings, MCP context servers, tool permissions, tasks, and external-agent handoff surfaces.",
+        configPaths: [
+          ".zed/settings.json",
+          ".zed/tasks.json"
+        ],
+        permissionConcepts: ["agent tool permissions", "task command review", "worktree trust"],
+        pluginSurfaces: ["MCP server extensions", "custom context servers", "external agents"],
+        mcpConventions: ["context_servers", "mcp:<server>:<tool_name>", "Agent Panel settings"],
+        historySurfaces: ["agent threads", "project context", "worktree-local settings"],
+        ciEvidence: ["scan report", "task automation review", "policy gate"],
+        markers: [
+          { path: ".zed/settings.json", kind: "file", strength: "strong" },
+          { path: ".zed/tasks.json", kind: "file", strength: "strong" },
+          { path: ".zed", kind: "directory", strength: "supporting" }
+        ]
+      },
+      {
+        id: "vscode",
+        name: "VS Code",
+        description: "VS Code workspace settings, tasks, extension recommendations, and editor-launched automation surfaces.",
+        configPaths: [
+          ".vscode/settings.json",
+          ".vscode/tasks.json",
+          ".vscode/extensions.json",
+          ".vscode/launch.json"
+        ],
+        permissionConcepts: ["workspace trust", "folder-open task automation", "extension recommendations"],
+        pluginSurfaces: ["extensions", "tasks", "launch configurations"],
+        mcpConventions: ["extension-provided MCP/tool configuration", "workspace settings"],
+        historySurfaces: ["workspace storage", "task output", "extension logs"],
+        ciEvidence: ["scan report", "task automation review", "extension policy gate"],
+        markers: [
+          { path: ".vscode/tasks.json", kind: "file", strength: "strong" },
+          { path: ".vscode/settings.json", kind: "file", strength: "strong" },
+          { path: ".vscode/extensions.json", kind: "file", strength: "supporting" },
+          { path: ".vscode/launch.json", kind: "file", strength: "supporting" },
+          { path: ".vscode", kind: "directory", strength: "supporting" }
         ]
       },
       {
