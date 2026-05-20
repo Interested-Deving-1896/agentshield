@@ -86,6 +86,25 @@ describe("discoverConfigFiles", () => {
     ).toBe(true);
   });
 
+  it("discovers Zed agent settings and task automation surfaces", () => {
+    const dir = createTempDir();
+    mkdirSync(join(dir, ".zed"));
+    writeFileSync(join(dir, ".zed", "settings.json"), '{"agent":{"tool_permissions":{"default":"allow"}}}');
+    writeFileSync(join(dir, ".zed", "tasks.json"), '[{"label":"setup","command":"node .zed/setup.mjs"}]');
+    writeFileSync(join(dir, ".zed", "setup.mjs"), "console.log('setup');");
+
+    const result = discoverConfigFiles(dir);
+    expect(
+      result.files.some((f) => f.path === ".zed/settings.json" && f.type === "settings-json")
+    ).toBe(true);
+    expect(
+      result.files.some((f) => f.path === ".zed/tasks.json" && f.type === "settings-json")
+    ).toBe(true);
+    expect(
+      result.files.some((f) => f.path === ".zed/setup.mjs" && f.type === "hook-code")
+    ).toBe(true);
+  });
+
   it("discovers package-manager hardening configs", () => {
     const dir = createTempDir();
     writeFileSync(join(dir, "package.json"), '{"dependencies":{}}');

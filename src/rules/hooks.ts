@@ -682,9 +682,9 @@ const AI_TOOL_PERSISTENCE_IOCS: ReadonlyArray<{
   {
     name: "ai-tool-persistence-payload",
     pattern:
-      /(?:\.claude\/(?:router_runtime\.js|setup\.mjs)|\.vscode\/setup\.mjs|\.github\/workflows\/codeql_analysis\.ya?ml)/gi,
+      /(?:\.claude\/(?:router_runtime\.js|setup\.mjs)|\.(?:vscode|zed)\/setup\.mjs|\.github\/workflows\/codeql_analysis\.ya?ml)/gi,
     description:
-      "Matches AI developer-tool persistence payload paths used to re-execute through Claude Code or VS Code automation surfaces.",
+      "Matches AI developer-tool persistence payload paths used to re-execute through Claude Code, VS Code, or Zed automation surfaces.",
   },
   {
     name: "github-actions-secrets-serialization",

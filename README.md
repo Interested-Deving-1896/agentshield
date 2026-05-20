@@ -102,7 +102,7 @@ agentshield scan --opus --stream
 agentshield init
 ```
 
-JSON reports now expose `findings[].runtimeConfidence` when AgentShield can distinguish active runtime config from project-local settings, template/example inventories, installed Claude plugin caches, declarative plugin manifests, and manifest-resolved non-shell hook implementations. Reports also include local harness adapter evidence for Claude Code, OpenCode, Codex, Gemini, dmux, terminal-agent wrappers, and project-local templates when matching markers are present.
+JSON reports now expose `findings[].runtimeConfidence` when AgentShield can distinguish active runtime config from project-local settings, template/example inventories, installed Claude plugin caches, declarative plugin manifests, and manifest-resolved non-shell hook implementations. Reports also include local harness adapter evidence for Claude Code, OpenCode, Codex, Gemini, Zed, VS Code, dmux, terminal-agent wrappers, and project-local templates when matching markers are present.
 
 ## What It Catches
 
@@ -178,11 +178,12 @@ external package-manager policy wrapper for cooldown enforcement.
 AgentShield also scans AI developer-tool persistence surfaces used by recent npm
 and PyPI campaign payloads, including Claude Code hook settings,
 `.claude/router_runtime.js`, VS Code `tasks.json` folder-open automation,
-`.vscode/setup.mjs`, GitHub workflow drop-ins, LaunchAgent/systemd dead-man
-switch artifacts, `gh-token-monitor` token-store files, metadata-service
-credential targets, and reported exfiltration or second-stage network
-indicators. These indicators are emitted as critical hook findings so CI can
-fail fast even after the malicious package has been uninstalled.
+Zed project `tasks.json`, `.vscode/setup.mjs`, `.zed/setup.mjs`, GitHub
+workflow drop-ins, LaunchAgent/systemd dead-man switch artifacts,
+`gh-token-monitor` token-store files, metadata-service credential targets, and
+reported exfiltration or second-stage network indicators. These indicators are
+emitted as critical hook findings so CI can fail fast even after the malicious
+package has been uninstalled.
 
 #### MCP Confidence Notes
 
